@@ -127,8 +127,9 @@ class UDPServer:
                 self._send_ack(protocol.SEQ_START, addr)
                 return
             if self._session is not None and \
-                    self._session["name"] == name and self._session["size"] == size:
-                # Duplicate START (handshake ACK was lost, sender retried).
+                    self._session["name"] == name and self._session["size"] == size and \
+                    self._session["expected_seq"] == 1:
+                # Duplicate START (handshake ACK was lost, sender retried before data).
                 # Re-ACK without destroying the running session.
                 self._send_ack(protocol.SEQ_START, addr)
                 return
@@ -149,6 +150,7 @@ class UDPServer:
                 "out": open(part_path, "wb"),
                 "addr": addr,
                 "written": 0,
+                "verbose": (total <= 500),
             }
             self.message(f"Transfer started: {name} ({size} bytes, "
                          f"{total} packets, {pk_size}B)")
@@ -168,6 +170,10 @@ class UDPServer:
                     session["written"] += len(payload)
                     session["expected_seq"] = exp + 1
                     self._send_ack(seq, addr)
+                    if session.get("verbose", False):
+                        self.message(f"SERVER <- DATA #{seq} received, sending ACK #{seq}")
+                    elif seq == 1 or seq == session.get("total_packets", 0) or seq % 50 == 0:
+                        self.message(f"SERVER <- DATA #{seq}/{session.get('total_packets', 0)} received, sending ACK #{seq}")
                 elif seq < exp:
                     # DUPLICATE: already written earlier (ACK was lost,
                     # sender retransmitted). Re-ACK, never write twice.
@@ -184,6 +190,7 @@ class UDPServer:
                 # Session already closed -- just re-ACK to unblock the sender.
                 self._send_ack(seq, addr)
                 return
+            self.message(f"SERVER <- END packet received, sending final ACK #{seq}")
             self._finalize(session)
             self._send_ack(seq, addr)
             self._reset_session()

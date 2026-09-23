@@ -1,57 +1,88 @@
 "use client";
 
-import { BarChart3, ShieldOff } from "lucide-react";
+import { BarChart3 } from "lucide-react";
 import { Badge, Panel, PanelHeader } from "@/components/ui";
 import type { Snapshot } from "@/lib/types";
 
-function Stat({ label, value, accent }: { label: string; value: number | string; accent?: boolean }) {
-  return (
-    <div className="rounded-lg border border-slate-800/70 bg-[#070b12] px-3 py-3">
-      <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-500">
-        {label}
-      </p>
-      <p
-        className={
-          "mt-1 font-mono text-xl font-bold " +
-          (accent ? "text-cyan-300" : "text-slate-100")
-        }
-      >
-        {value}
-      </p>
-    </div>
-  );
-}
-
 export function NetworkingStats({ status }: { status: Snapshot | null }) {
+  const sent = status?.packets_sent ?? 0;
+  const acked = status?.packets_acked ?? 0;
+  const retries = status?.retransmissions ?? 0;
+  const seq = status?.current_sequence ?? 0;
+  const lost = status?.packets_lost ?? 0;
+  const duplicates = status?.duplicate_packets ?? 0;
+
   return (
     <Panel>
       <PanelHeader
-        title="Networking Statistics"
-        icon={<BarChart3 size={14} />}
-        right={<Badge tone="slate">live</Badge>}
+        title="TELEMETRY & NETWORK METRICS"
+        icon={<BarChart3 size={15} />}
+        right={
+          <Badge tone="cyan" className="px-2 py-0.5 font-mono text-[10px]">
+            REAL-TIME UDP
+          </Badge>
+        }
       />
-      <div className="grid grid-cols-2 gap-2 p-4 sm:grid-cols-3">
-        <Stat label="Packets Sent" value={status?.packets_sent ?? 0} />
-        <Stat label="Packets ACKed" value={status?.packets_acked ?? 0} accent />
-        <Stat
-          label="Retransmissions"
-          value={status?.retransmissions ?? 0}
-        />
-        <Stat label="Packets Lost" value={status?.packets_lost ?? 0} />
-        <Stat
-          label="Current Sequence"
-          value={status?.current_sequence ?? 0}
-        />
-        <Stat label="Duplicates" value={status?.duplicate_packets ?? 0} />
+      
+      {/* 4 Key Primary Metrics from Specification */}
+      <div className="grid grid-cols-2 divide-y-2 divide-neutral-700 border-b-2 border-neutral-700 sm:grid-cols-4 sm:divide-x-2 sm:divide-y-0">
+        <div className="bg-neutral-900/80 p-4 text-center">
+          <p className="text-[11px] font-black uppercase tracking-[0.2em] text-neutral-400">
+            PACKETS SENT
+          </p>
+          <p className="mt-1 font-mono text-3xl font-black text-cyan-400 sm:text-4xl">
+            {sent}
+          </p>
+        </div>
+
+        <div className="bg-neutral-900/80 p-4 text-center">
+          <p className="text-[11px] font-black uppercase tracking-[0.2em] text-neutral-400">
+            PACKETS ACK
+          </p>
+          <p className="mt-1 font-mono text-3xl font-black text-green-400 sm:text-4xl">
+            {acked}
+          </p>
+        </div>
+
+        <div className="bg-neutral-900/80 p-4 text-center">
+          <p className="text-[11px] font-black uppercase tracking-[0.2em] text-neutral-400">
+            RETRIES
+          </p>
+          <p className={`mt-1 font-mono text-3xl font-black sm:text-4xl ${retries > 0 ? "text-amber-400" : "text-neutral-300"}`}>
+            {retries}
+          </p>
+        </div>
+
+        <div className="bg-neutral-900/80 p-4 text-center">
+          <p className="text-[11px] font-black uppercase tracking-[0.2em] text-neutral-400">
+            SEQUENCE
+          </p>
+          <p className="mt-1 font-mono text-3xl font-black text-white sm:text-4xl">
+            {seq}
+          </p>
+        </div>
       </div>
 
-      <div className="flex flex-wrap gap-2 border-t border-slate-800/70 px-4 py-3">
-        <Badge tone="slate" className="px-2.5 py-1">
-          <ShieldOff size={11} /> Checksum — Coming Soon
-        </Badge>
-        <Badge tone="slate" className="px-2.5 py-1">
-          <ShieldOff size={11} /> Resume Transfer — Coming Soon
-        </Badge>
+      {/* Secondary Metrics Bar */}
+      <div className="grid grid-cols-2 divide-x-2 divide-neutral-700 bg-neutral-950 text-xs font-mono sm:grid-cols-4">
+        <div className="flex items-center justify-between px-4 py-2.5">
+          <span className="font-bold text-neutral-500 uppercase">Packets Lost</span>
+          <span className={`font-black ${lost > 0 ? "text-red-400" : "text-neutral-300"}`}>{lost}</span>
+        </div>
+        <div className="flex items-center justify-between px-4 py-2.5">
+          <span className="font-bold text-neutral-500 uppercase">Duplicates</span>
+          <span className={`font-black ${duplicates > 0 ? "text-amber-400" : "text-neutral-300"}`}>{duplicates}</span>
+        </div>
+        <div className="flex items-center justify-between px-4 py-2.5">
+          <span className="font-bold text-neutral-500 uppercase">Bytes Confirmed</span>
+          <span className="font-black text-neutral-200">
+            {status?.confirmed_bytes ? `${(status.confirmed_bytes / 1024).toFixed(1)} KB` : "0 KB"}
+          </span>
+        </div>
+        <div className="flex items-center justify-between px-4 py-2.5">
+          <span className="font-bold text-neutral-500 uppercase">ARQ Window</span>
+          <span className="font-black text-cyan-400">1 (Stop & Wait)</span>
+        </div>
       </div>
     </Panel>
   );

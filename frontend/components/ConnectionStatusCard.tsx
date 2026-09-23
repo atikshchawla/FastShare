@@ -1,7 +1,7 @@
 "use client";
 
-import { Loader2, Network, Play, Square } from "lucide-react";
-import { KeyValue, Panel, PanelHeader, StatusDot } from "@/components/ui";
+import { Loader2, Power, Server } from "lucide-react";
+import { Badge, Panel, PanelHeader, StatusDot } from "@/components/ui";
 import type { Snapshot } from "@/lib/types";
 
 export function ConnectionStatusCard({
@@ -18,68 +18,83 @@ export function ConnectionStatusCard({
   const running = status?.server_status === "running";
   const error = status?.server_status === "error";
 
-  const tone = running ? "green" : error ? "red" : "slate";
-  const label = running ? "Connected" : error ? "Error" : "Disconnected";
-
   return (
     <Panel>
-      <PanelHeader title="1 · Network Status" icon={<Network size={14} />} />
-      <div className="px-4 pt-4">
-        <div className="flex items-center gap-3">
-          <StatusDot tone={tone} pulse={running} className="h-3 w-3" />
-          <span className="text-lg font-semibold text-slate-100">{label}</span>
-        </div>
-        {!running && (
-          <p className="mt-2 text-[12px] text-slate-500">
-            The UDP receiver must be started before any transfer can run.
-          </p>
-        )}
-        <div className="mt-3">
-          {running ? (
-            <button
-              onClick={onStop}
-              disabled={busy}
-              className="inline-flex items-center gap-1.5 rounded-md border border-rose-500/40 bg-rose-500/10 px-3 py-1.5 text-[12px] font-semibold text-rose-300 transition hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {busy ? (
-                <Loader2 size={12} className="animate-spin" />
-              ) : (
-                <Square size={11} />
-              )}
-              Stop Server
-            </button>
-          ) : (
+      <PanelHeader
+        title="NETWORK STATUS"
+        icon={<Server size={15} />}
+        right={
+          <Badge tone={running ? "green" : error ? "red" : "slate"}>
+            {running ? "UDP ACTIVE" : error ? "ERROR" : "OFFLINE"}
+          </Badge>
+        }
+      />
+
+      <div className="p-4">
+        {running ? (
+          <div className="border-2 border-green-500 bg-green-500/10 p-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <StatusDot tone="green" pulse className="h-3.5 w-3.5" />
+                <span className="text-lg font-black uppercase tracking-wider text-green-400">
+                  SERVER ONLINE
+                </span>
+              </div>
+              <button
+                onClick={onStop}
+                disabled={busy}
+                className="flex items-center gap-1.5 border-2 border-red-500 bg-red-500/20 px-3 py-1.5 font-mono text-xs font-bold uppercase tracking-wider text-red-300 shadow-[2px_2px_0px_#000] transition active:translate-x-0.5 active:translate-y-0.5 hover:bg-red-500/30 disabled:opacity-50"
+              >
+                {busy ? <Loader2 size={13} className="animate-spin" /> : <Power size={13} />}
+                STOP SERVER
+              </button>
+            </div>
+
+            <div className="mt-3 border-t-2 border-green-500/30 pt-3 font-mono text-xs">
+              <div className="flex items-center justify-between py-1">
+                <span className="font-bold text-neutral-400">ADDRESS</span>
+                <span className="font-extrabold text-white">
+                  {status?.config.server_ip ?? "127.0.0.1"} : {status?.server_port ?? 5001}
+                </span>
+              </div>
+              <div className="flex items-center justify-between py-1">
+                <span className="font-bold text-neutral-400">PROTOCOL</span>
+                <span className="font-extrabold text-cyan-400">
+                  UDP / STOP-AND-WAIT ARQ
+                </span>
+              </div>
+              <div className="flex items-center justify-between py-1">
+                <span className="font-bold text-neutral-400">ACTIVE SESSIONS</span>
+                <span className="font-extrabold text-white">
+                  {status?.server_sessions ?? 0}
+                </span>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="border-2 border-neutral-700 bg-neutral-950 p-4">
+            <div className="flex items-center gap-2.5">
+              <StatusDot tone={error ? "red" : "slate"} className="h-3.5 w-3.5" />
+              <span className={`text-lg font-black uppercase tracking-wider ${error ? "text-red-400" : "text-neutral-300"}`}>
+                {error ? "SERVER ERROR" : "SERVER OFFLINE"}
+              </span>
+            </div>
+            
+            <p className="mt-2 font-mono text-xs text-neutral-400">
+              {error && status?.server_error
+                ? status.server_error
+                : "UDP receiver is not running. Start the server to receive packets."}
+            </p>
+
             <button
               onClick={onStart}
               disabled={busy}
-              className="inline-flex items-center gap-1.5 rounded-md border border-emerald-500/50 bg-emerald-500/15 px-3 py-1.5 text-[12px] font-semibold text-emerald-300 transition hover:bg-emerald-500/25 disabled:cursor-not-allowed disabled:opacity-50"
+              className="mt-4 flex w-full items-center justify-center gap-2 border-2 border-green-500 bg-green-500 px-4 py-2.5 text-xs font-black uppercase tracking-widest text-black shadow-[3px_3px_0px_#000] transition active:translate-x-0.5 active:translate-y-0.5 hover:bg-green-400 disabled:opacity-50"
             >
-              {busy ? (
-                <Loader2 size={12} className="animate-spin" />
-              ) : (
-                <Play size={11} />
-              )}
-              Start Server
+              {busy ? <Loader2 size={14} className="animate-spin" /> : <Power size={14} />}
+              [ START SERVER ]
             </button>
-          )}
-        </div>
-      </div>
-      <div className="divide-y divide-slate-800/60 px-4 pb-3 pt-1">
-        <KeyValue
-          label="Server"
-          value={`${status?.config.server_ip ?? "127.0.0.1"}:${
-            status?.server_port ?? 5001
-          }`}
-        />
-        <KeyValue
-          label="Protocol"
-          value="UDP / Stop-and-Wait ARQ"
-          accent
-        />
-        {error && status?.server_error && (
-          <p className="pt-2 font-mono text-[11px] text-rose-400">
-            {status.server_error}
-          </p>
+          </div>
         )}
       </div>
     </Panel>

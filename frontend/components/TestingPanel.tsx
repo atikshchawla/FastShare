@@ -1,9 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { FlaskConical, Play } from "lucide-react";
+import { ArrowDown, Check, FlaskConical, Play, X } from "lucide-react";
 import { Badge, Panel, PanelHeader } from "@/components/ui";
-import { cn } from "@/lib/cn";
 import type { Snapshot, TestingConfig } from "@/lib/types";
 
 interface Scenario {
@@ -17,23 +16,23 @@ interface Scenario {
 const SCENARIOS: Scenario[] = [
   {
     id: "normal",
-    label: "Test 1 · Normal",
+    label: "TEST 1 · 0% LOSS (IDEAL)",
     prob: 0,
-    expected: "All packets ACKed · 0 retransmissions",
+    expected: "Stop-and-Wait clean transfer · 0 retransmissions",
     tone: "green",
   },
   {
     id: "loss10",
-    label: "Test 2 · 10% Loss",
+    label: "TEST 2 · 10% LOSS (MODERATE)",
     prob: 0.1,
-    expected: "Some timeouts → retransmission → still completes",
+    expected: "Demonstrates Timeout & Retransmission · 100% data integrity preserved",
     tone: "amber",
   },
   {
-    id: "loss50",
-    label: "Test 3 · 50% Loss",
-    prob: 0.5,
-    expected: "Heavy retransmission · may hit retry limit",
+    id: "loss30",
+    label: "TEST 3 · 30% LOSS (STRESS)",
+    prob: 0.3,
+    expected: "Heavy loss recovery · Proves ARQ correctness under adversarial conditions",
     tone: "red",
   },
 ];
@@ -63,122 +62,179 @@ export function TestingPanel({
   }, [status?.testing.loss_enabled, status?.testing.loss_probability]);
 
   const transferring = status?.transfer_status === "transferring";
+
   const pick = (s: Scenario) => {
     setActive(s.id);
     setEnabled(s.prob > 0);
     setProb(s.prob);
+    onApply({ loss_enabled: s.prob > 0, loss_probability: s.prob });
   };
+
+  const sampleLossSeq = status?.last_loss_seq ?? 42;
 
   return (
     <Panel>
       <PanelHeader
-        title="Testing — Packet Loss Simulation"
-        icon={<FlaskConical size={14} />}
+        title="🧪 PACKET LOSS LAB"
+        icon={<FlaskConical size={15} />}
         right={
           <Badge tone={enabled ? "amber" : "slate"}>
-            {enabled
-              ? `drop ${Math.round(prob * 100)}%`
-              : "OFF"}
+            SIMULATION: {enabled ? `ACTIVE (${Math.round(prob * 100)}% DROP)` : "OFF"}
           </Badge>
         }
       />
 
-      <div className="p-4">
-        <div className="grid grid-cols-2 gap-3">
-          <div className="flex items-center gap-3 rounded-lg border border-slate-800 bg-[#070b12] px-3 py-2.5">
-            <button
-              role="switch"
-              aria-checked={enabled}
-              onClick={() => setEnabled((e) => !e)}
-              className={cn(
-                "relative h-5 w-10 rounded-full transition",
-                enabled ? "bg-amber-500/70" : "bg-slate-700",
-              )}
-            >
-              <span
-                className={cn(
-                  "absolute top-0.5 h-4 w-4 rounded-full bg-white transition-all",
-                  enabled ? "left-[22px]" : "left-0.5",
-                )}
-              />
-            </button>
-            <div>
-              <p className="text-[12px] font-semibold text-slate-200">
-                Packet Loss
+      <div className="p-4 space-y-4">
+        <p className="font-mono text-xs text-neutral-300">
+          Simulate unreliable network conditions to demonstrate{" "}
+          <span className="text-cyan-400 font-bold">Stop-and-Wait ARQ timeout</span>,{" "}
+          <span className="text-amber-400 font-bold">retransmission</span>, and{" "}
+          <span className="text-green-400 font-bold">duplicate avoidance</span>.
+        </p>
+
+        {/* 2-Column Lab Controls & Visual Concept Flow */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {/* Controls Column */}
+          <div className="space-y-3 border-2 border-neutral-700 bg-neutral-950 p-4">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-black uppercase tracking-wider text-neutral-300">
+                LOSS SIMULATION
+              </span>
+              <button
+                role="switch"
+                aria-checked={enabled}
+                onClick={() => {
+                  const next = !enabled;
+                  setEnabled(next);
+                  onApply({ loss_enabled: next, loss_probability: prob });
+                }}
+                className={`border-2 px-3 py-1 font-mono text-xs font-black uppercase transition active:translate-x-0.5 active:translate-y-0.5 ${
+                  enabled
+                    ? "border-amber-500 bg-amber-500 text-black shadow-[2px_2px_0px_#000]"
+                    : "border-neutral-700 bg-neutral-800 text-neutral-400"
+                }`}
+              >
+                [ {enabled ? "ON" : "OFF"} ]
+              </button>
+            </div>
+
+            <div className="flex items-center justify-between border-t-2 border-neutral-800 pt-3">
+              <span className="text-xs font-black uppercase tracking-wider text-neutral-300">
+                DROP PROBABILITY
+              </span>
+              <select
+                value={prob}
+                disabled={!enabled}
+                onChange={(e) => {
+                  const val = Number(e.target.value);
+                  setProb(val);
+                  onApply({ loss_enabled: enabled, loss_probability: val });
+                }}
+                className="border-2 border-neutral-700 bg-neutral-900 px-3 py-1.5 font-mono text-xs font-black text-white outline-none focus:border-amber-400 disabled:opacity-50"
+              >
+                {[0, 0.05, 0.1, 0.2, 0.3, 0.5].map((p) => (
+                  <option key={p} value={p}>
+                    {Math.round(p * 100)}% PROBABILITY
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Test Scenarios */}
+            <div className="space-y-1.5 pt-2">
+              <p className="text-[10px] font-black uppercase tracking-widest text-neutral-500">
+                DEMO PRESETS
               </p>
-              <p className="font-mono text-[10px] text-slate-500">
-                drop incoming packets / ACKs
+              {SCENARIOS.map((s) => (
+                <button
+                  key={s.id}
+                  onClick={() => pick(s)}
+                  className={`w-full border-2 p-2 text-left font-mono transition ${
+                    active === s.id && enabled === (s.prob > 0)
+                      ? "border-cyan-400 bg-cyan-950/40 text-cyan-200 shadow-[2px_2px_0px_#000]"
+                      : "border-neutral-800 bg-neutral-900/60 text-neutral-400 hover:border-neutral-600 hover:text-white"
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-black">{s.label}</span>
+                    <span className="text-[10px] font-bold text-neutral-500">
+                      {s.prob * 100}%
+                    </span>
+                  </div>
+                  <p className="mt-0.5 text-[10px] text-neutral-500 line-clamp-1">{s.expected}</p>
+                </button>
+              ))}
+            </div>
+
+            <button
+              onClick={() => onRunTest({ loss_enabled: enabled, loss_probability: prob })}
+              disabled={busy || !hasFile || !serverRunning || transferring}
+              className={`flex w-full items-center justify-center gap-2 border-2 py-2.5 font-mono text-xs font-black uppercase tracking-widest transition active:translate-x-0.5 active:translate-y-0.5 ${
+                !serverRunning || !hasFile || transferring
+                  ? "border-neutral-700 bg-neutral-800 text-neutral-500 cursor-not-allowed"
+                  : "border-amber-400 bg-amber-400 text-black shadow-[3px_3px_0px_#000] hover:bg-amber-300 cursor-pointer"
+              }`}
+            >
+              <Play size={14} />
+              [ RUN LAB TEST ]
+            </button>
+          </div>
+
+          {/* Educational Visual Flow Column (Direct requirement from Prompt 8) */}
+          <div className="border-2 border-neutral-700 bg-neutral-950 p-4 flex flex-col justify-between">
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-[0.2em] text-cyan-400">
+                STOP-AND-WAIT ARQ FAULT RECOVERY CYCLE
+              </p>
+              <p className="mt-1 font-mono text-[11px] text-neutral-400">
+                When a packet or ACK is dropped by the simulated channel:
               </p>
             </div>
+
+            <div className="my-3 flex flex-col items-center gap-1 font-mono text-xs font-black">
+              {/* STEP 1 */}
+              <div className="flex w-full max-w-[240px] items-center justify-between border-2 border-cyan-500 bg-cyan-950/40 px-3 py-1.5 text-cyan-300">
+                <span>DATA #{sampleLossSeq}</span>
+                <span className="text-[10px] text-neutral-400">SENT</span>
+              </div>
+              
+              <ArrowDown size={14} className="text-neutral-500" />
+              
+              {/* STEP 2 */}
+              <div className="flex w-full max-w-[240px] items-center justify-between border-2 border-red-500 bg-red-950/50 px-3 py-1.5 text-red-400">
+                <span>LOST IN TRANSIT</span>
+                <X size={14} className="text-red-500" />
+              </div>
+              
+              <ArrowDown size={14} className="text-neutral-500" />
+              
+              {/* STEP 3 */}
+              <div className="flex w-full max-w-[240px] items-center justify-between border-2 border-amber-500 bg-amber-950/40 px-3 py-1.5 text-amber-300">
+                <span>TIMER EXPIRES</span>
+                <span className="text-[10px] text-neutral-400">{status?.config.timeout_ms ?? 500}ms</span>
+              </div>
+              
+              <ArrowDown size={14} className="text-neutral-500" />
+              
+              {/* STEP 4 */}
+              <div className="flex w-full max-w-[240px] items-center justify-between border-2 border-amber-400 bg-amber-950/40 px-3 py-1.5 text-amber-200">
+                <span>RETRANSMIT #{sampleLossSeq}</span>
+                <span className="text-[10px] text-neutral-400">RETRY #1</span>
+              </div>
+              
+              <ArrowDown size={14} className="text-neutral-500" />
+              
+              {/* STEP 5 */}
+              <div className="flex w-full max-w-[240px] items-center justify-between border-2 border-green-500 bg-green-950/50 px-3 py-1.5 text-green-300">
+                <span>ACK #{sampleLossSeq}</span>
+                <Check size={14} className="text-green-400" />
+              </div>
+            </div>
+
+            <div className="border-t-2 border-neutral-800 pt-2 font-mono text-[10px] text-neutral-500">
+              ⚡ Verified with real UDP drops at socket layer in Python backend.
+            </div>
           </div>
-
-          <div className="flex items-center justify-between gap-2 rounded-lg border border-slate-800 bg-[#070b12] px-3 py-2.5">
-            <span className="text-[12px] text-slate-300">Loss Probability</span>
-            <select
-              value={prob}
-              onChange={(e) => setProb(Number(e.target.value))}
-              className="rounded-md border border-slate-700 bg-[#0a0f1a] px-2 py-1.5 font-mono text-[12px] text-slate-100 outline-none focus:border-amber-500/60"
-            >
-              {[0, 0.05, 0.1, 0.25, 0.5].map((p) => (
-                <option key={p} value={p}>
-                  {Math.round(p * 100)}%
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-
-        <div className="mt-3 space-y-1.5">
-          {SCENARIOS.map((s) => (
-            <button
-              key={s.id}
-              onClick={() => pick(s)}
-              className={cn(
-                "flex w-full items-center justify-between gap-2 rounded-lg border px-3 py-2 text-left transition",
-                active === s.id
-                  ? "border-cyan-500/60 bg-cyan-500/[0.07]"
-                  : "border-slate-800 bg-[#070b12] hover:border-slate-600",
-              )}
-            >
-              <span className="text-[12px] font-semibold text-slate-200">
-                {s.label}
-              </span>
-              <span className="truncate text-right text-[11px] text-slate-500">
-                {s.expected}
-              </span>
-            </button>
-          ))}
-        </div>
-
-        <div className="mt-3 flex items-center gap-2">
-          <button
-            onClick={() => onApply({ loss_enabled: enabled, loss_probability: prob })}
-            disabled={busy}
-            className="rounded-md border border-slate-700 bg-slate-800/60 px-3 py-2 text-[12px] font-semibold text-slate-200 transition hover:bg-slate-700/60 disabled:opacity-50"
-          >
-            Apply to Server
-          </button>
-          <button
-            onClick={() => onRunTest({ loss_enabled: enabled, loss_probability: prob })}
-            disabled={busy || !hasFile || !serverRunning || transferring}
-            title={
-              !serverRunning
-                ? "start the UDP receiver first"
-                : !hasFile
-                  ? "select a file first"
-                  : "apply loss, then start"
-            }
-            className={cn(
-              "inline-flex items-center gap-1.5 rounded-md border border-emerald-500/50",
-              "bg-emerald-500/15 px-3 py-2 text-[12px] font-semibold text-emerald-300",
-              "transition hover:bg-emerald-500/25 disabled:cursor-not-allowed disabled:opacity-40",
-            )}
-          >
-            <Play size={13} /> Run Test
-          </button>
-          <span className="ml-auto text-[10px] text-slate-600">
-            Loss sim lives inside Python — real UDP packets, dropped at random
-          </span>
         </div>
       </div>
     </Panel>

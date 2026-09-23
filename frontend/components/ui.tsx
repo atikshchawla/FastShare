@@ -3,7 +3,7 @@
 import type { ReactNode } from "react";
 import { cn } from "@/lib/cn";
 
-/** Column header / label used at the top of every section. */
+/** Neo-Brutalist panel — thick border, hard shadow, no rounded corners */
 export function Panel({
   children,
   className,
@@ -14,8 +14,7 @@ export function Panel({
   return (
     <section
       className={cn(
-        "rounded-xl border border-slate-800/80 bg-slate-900/50 backdrop-blur-sm",
-        "shadow-[0_1px_0_0_rgba(255,255,255,0.03)_inset]",
+        "border-2 border-neutral-700 bg-neutral-900 shadow-[4px_4px_0px_#000]",
         className,
       )}
     >
@@ -34,9 +33,9 @@ export function PanelHeader({
   right?: ReactNode;
 }) {
   return (
-    <div className="flex items-center justify-between border-b border-slate-800/70 px-4 py-3">
-      <div className="flex items-center gap-2 text-[13px] font-semibold uppercase tracking-widest text-slate-400">
-        {icon && <span className="text-cyan-400/90">{icon}</span>}
+    <div className="flex items-center justify-between border-b-2 border-neutral-700 bg-neutral-800 px-4 py-3">
+      <div className="flex items-center gap-2 text-[13px] font-extrabold uppercase tracking-[0.15em] text-neutral-200">
+        {icon && <span className="text-cyan-400">{icon}</span>}
         {title}
       </div>
       {right}
@@ -45,12 +44,12 @@ export function PanelHeader({
 }
 
 const badgeTones = {
-  green: "bg-emerald-500/10 text-emerald-400 border-emerald-500/30",
-  amber: "bg-amber-500/10 text-amber-400 border-amber-500/30",
-  red: "bg-rose-500/10 text-rose-400 border-rose-500/30",
-  cyan: "bg-cyan-500/10 text-cyan-400 border-cyan-500/30",
-  slate: "bg-slate-500/10 text-slate-400 border-slate-600/40",
-  violet: "bg-violet-500/10 text-violet-400 border-violet-500/30",
+  green: "bg-green-500/20 text-green-400 border-green-500",
+  amber: "bg-amber-500/20 text-amber-400 border-amber-500",
+  red: "bg-red-500/20 text-red-400 border-red-500",
+  cyan: "bg-cyan-500/20 text-cyan-400 border-cyan-500",
+  slate: "bg-neutral-800 text-neutral-400 border-neutral-600",
+  violet: "bg-violet-500/20 text-violet-400 border-violet-500",
 } as const;
 
 export type BadgeTone = keyof typeof badgeTones;
@@ -67,7 +66,7 @@ export function Badge({
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium",
+        "inline-flex items-center gap-1.5 border-2 px-2 py-0.5 text-[11px] font-bold uppercase tracking-wider",
         badgeTones[tone],
         className,
       )}
@@ -78,11 +77,11 @@ export function Badge({
 }
 
 const dotTones = {
-  green: "bg-emerald-400",
+  green: "bg-green-400",
   amber: "bg-amber-400",
-  red: "bg-rose-500",
+  red: "bg-red-500",
   cyan: "bg-cyan-400",
-  slate: "bg-slate-500",
+  slate: "bg-neutral-500",
 } as const;
 
 export function StatusDot({
@@ -97,7 +96,7 @@ export function StatusDot({
   return (
     <span
       className={cn(
-        "inline-block h-2.5 w-2.5 rounded-full",
+        "inline-block h-3 w-3",
         dotTones[tone],
         pulse && "status-pulse",
         className,
@@ -120,14 +119,14 @@ export function KeyValue({
 }) {
   return (
     <div className="flex items-center justify-between gap-4 py-2">
-      <span className="text-[12px] uppercase tracking-wider text-slate-500">
+      <span className="text-[12px] font-bold uppercase tracking-wider text-neutral-500">
         {label}
       </span>
       <span
         className={cn(
-          "text-right text-[13px]",
-          mono && "font-mono-num font-mono text-slate-200",
-          accent && "text-cyan-300",
+          "text-right text-[13px] font-semibold",
+          mono && "font-mono-num font-mono text-neutral-100",
+          accent && "text-cyan-400",
         )}
       >
         {value}
@@ -138,7 +137,7 @@ export function KeyValue({
 
 export function SectionLabel({ children }: { children: ReactNode }) {
   return (
-    <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+    <p className="text-[11px] font-extrabold uppercase tracking-[0.2em] text-neutral-500">
       {children}
     </p>
   );

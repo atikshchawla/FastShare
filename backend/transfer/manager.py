@@ -31,7 +31,7 @@ SS_STOPPED = "stopped"
 SS_RUNNING = "running"
 SS_ERROR = "error"
 
-MAX_FEED = 300       # max event feed lines kept
+MAX_FEED = 3000      # max event feed lines kept
 MAX_LOG_ENTRIES = 4000  # cap packet log size (UI asks for a window anyway)
 
 
@@ -212,6 +212,8 @@ class TransferManager:
                         "error": "UDP server is not running -- start the "
                                  "receiver first"}
             self._reset_transfer_state()
+            if self.server:
+                self.server._reset_session()
             self.file_name = file_name
             self.upload_path = upload_path
             self.file_size = os.path.getsize(upload_path)
@@ -273,6 +275,8 @@ class TransferManager:
             self._cancel_requested = True
             if self.client:
                 self.client.cancel()
+            if self.server:
+                self.server._reset_session()
             self._log("Cancellation requested")
             return {"ok": True, "message": "cancelling..."}
 
@@ -299,6 +303,7 @@ class TransferManager:
         self.upload_path = None
         self._packet_order = []
         self.packets = dict()
+        self.feed = []
         self._cancel_requested = False
 
     def _set_transfer_state(self, status, error=None):
@@ -354,7 +359,7 @@ class TransferManager:
             seqs = self._packet_order[-limit:]
             return [self.packets[s] for s in seqs]
 
-    def recent_feed(self, limit=60):
+    def recent_feed(self, limit=500):
         with self._lock:
             return list(self.feed[-limit:])
 

@@ -1,64 +1,104 @@
 "use client";
 
-import { useState } from "react";
-import { ChevronDown, FileCode2 } from "lucide-react";
+import { Check, Circle, Cpu } from "lucide-react";
 import { Badge, Panel, PanelHeader } from "@/components/ui";
-import { cn } from "@/lib/cn";
 import type { Snapshot } from "@/lib/types";
 
-function Row({ label, value, on }: { label: string; value: string; on?: boolean }) {
-  return (
-    <div className="flex items-center justify-between rounded-md px-3 py-2 font-mono text-[12px]">
-      <span className="text-slate-500">{label}</span>
-      <span className={on ? "text-emerald-400" : "text-slate-200"}>{value}</span>
-    </div>
-  );
-}
+const IMPLEMENTED_FEATURES = [
+  "UDP Client / Server",
+  "File Packetization",
+  "Sequence Numbers",
+  "ACK Mechanism",
+  "Stop-and-Wait ARQ",
+  "Basic Retransmission",
+  "Duplicate Handling",
+  "Packet Loss Simulation",
+];
+
+const IN_PROGRESS_FEATURES = [
+  "Checksum Verification",
+  "Resume Transfer",
+  "Advanced Transfer Statistics",
+];
 
 export function ProtocolPanel({ status }: { status: Snapshot | null }) {
-  const [open, setOpen] = useState(false);
-  const name = status?.protocol;
-
+  const packetSize = status?.config.packet_size ?? 1024;
   return (
     <Panel>
       <PanelHeader
-        title="Protocol Details"
-        icon={<FileCode2 size={14} />}
+        title="PROTOCOL SPECIFICATION & STATUS"
+        icon={<Cpu size={15} />}
         right={
-          <button
-            onClick={() => setOpen((o) => !o)}
-            className="flex items-center gap-1 rounded-md border border-slate-800 px-2 py-1 text-[11px] text-slate-400 transition hover:text-slate-200"
-          >
-            {open ? "collapse" : "expand"}
-            <ChevronDown
-              size={13}
-              className={cn("transition-transform", open && "rotate-180")}
-            />
-          </button>
+          <Badge tone="cyan" className="font-mono text-[10px]">
+            RFC SPECIFICATION
+          </Badge>
         }
       />
-      <div className={cn("px-2 pb-2", !open && "hidden")}>
-        <div className="divide-y divide-slate-800/50">
-          <Row label="Transport Layer" value={name?.transport ?? "UDP"} />
-          <Row label="Reliability" value={name?.reliability ?? "Stop-and-Wait ARQ"} on />
-          <Row
-            label="Packet Size"
-            value={`${name?.packet_size ?? status?.config.packet_size ?? 1024} bytes`}
-          />
-          <Row label="Sequence Numbers" value="Enabled" on />
-          <Row label="Acknowledgements" value="Enabled" on />
-          <Row label="Retransmission" value="Enabled" on />
+
+      <div className="p-4 space-y-4">
+        {/* Wire Header Specification */}
+        <div className="border-2 border-neutral-700 bg-neutral-950 p-3 font-mono text-xs">
+          <p className="text-[10px] font-black uppercase tracking-widest text-cyan-400 mb-2">
+            FASTSHARE BINARY WIRE FORMAT (9-BYTE HEADER)
+          </p>
+          <div className="grid grid-cols-4 border-2 border-neutral-700 text-center font-bold">
+            <div className="border-r-2 border-neutral-700 bg-neutral-900 p-2">
+              <span className="block text-[10px] text-neutral-500">SEQ NUM</span>
+              <span className="text-white">4 BYTES</span>
+            </div>
+            <div className="border-r-2 border-neutral-700 bg-neutral-900 p-2">
+              <span className="block text-[10px] text-neutral-500">TYPE</span>
+              <span className="text-white">1 BYTE</span>
+            </div>
+            <div className="border-r-2 border-neutral-700 bg-neutral-900 p-2">
+              <span className="block text-[10px] text-neutral-500">LENGTH</span>
+              <span className="text-white">4 BYTES</span>
+            </div>
+            <div className="bg-neutral-800 p-2">
+              <span className="block text-[10px] text-neutral-500">PAYLOAD</span>
+              <span className="text-cyan-300">{packetSize} BYTES MAX</span>
+            </div>
+          </div>
         </div>
-        <div className="mt-2 flex flex-wrap gap-2 px-1">
-          <Badge tone="slate">checksum: {name?.checksum ?? "coming soon"}</Badge>
-          <Badge tone="slate">resume: {name?.resume ?? "coming soon"}</Badge>
+
+        {/* Feature Implementation Status (Requirement from Section 9) */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* IMPLEMENTED */}
+          <div className="border-2 border-green-500/50 bg-green-950/10 p-3">
+            <p className="text-xs font-black uppercase tracking-widest text-green-400 mb-2 flex items-center gap-1.5">
+              <span className="inline-block h-2 w-2 bg-green-400" />
+              IMPLEMENTED
+            </p>
+            <div className="space-y-1.5 font-mono text-xs">
+              {IMPLEMENTED_FEATURES.map((f) => (
+                <div key={f} className="flex items-center gap-2 text-neutral-200">
+                  <Check size={14} className="text-green-400 shrink-0" />
+                  <span>{f}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* IN PROGRESS */}
+          <div className="border-2 border-neutral-700 bg-neutral-950 p-3">
+            <p className="text-xs font-black uppercase tracking-widest text-neutral-400 mb-2 flex items-center gap-1.5">
+              <span className="inline-block h-2 w-2 bg-neutral-500" />
+              IN PROGRESS
+            </p>
+            <div className="space-y-1.5 font-mono text-xs">
+              {IN_PROGRESS_FEATURES.map((f) => (
+                <div key={f} className="flex items-center gap-2 text-neutral-400">
+                  <Circle size={13} className="text-neutral-500 shrink-0" />
+                  <span>{f}</span>
+                </div>
+              ))}
+            </div>
+            <p className="mt-3 border-t border-neutral-800 pt-2 text-[10px] font-mono text-neutral-500">
+              * Not active in current build. Honest academic disclosure.
+            </p>
+          </div>
         </div>
       </div>
-      {!open && (
-        <p className="px-4 pb-3 text-[11px] text-slate-600">
-          Header layout: seq (4B) · type (1B) · length (4B) · payload — expand for details
-        </p>
-      )}
     </Panel>
   );
 }

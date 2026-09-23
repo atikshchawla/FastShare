@@ -3,8 +3,15 @@
 @tailwind utilities;
 
 :root {
-  --background: #06090f;
-  --foreground: #e2e8f0;
+  --background: #0a0a0a;
+  --foreground: #e5e5e5;
+  --brutal-border: #2a2a2a;
+  --brutal-shadow: 4px 4px 0px #000;
+  --brutal-shadow-sm: 2px 2px 0px #000;
+  --accent-cyan: #06b6d4;
+  --accent-green: #22c55e;
+  --accent-amber: #f59e0b;
+  --accent-red: #ef4444;
 }
 
 html,
@@ -16,77 +23,86 @@ body {
 body {
   font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
   background-image:
-    radial-gradient(1200px 500px at 15% -10%, rgba(34, 211, 238, 0.07), transparent 60%),
-    radial-gradient(900px 400px at 90% 0%, rgba(16, 185, 129, 0.05), transparent 55%);
-  background-attachment: fixed;
+    linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px);
+  background-size: 24px 24px;
 }
 
-/* ---- technical mono helpers ------------------------------------------ */
+/* ---- mono helpers --------------------------------------------------- */
 .font-mono-num {
   font-variant-numeric: tabular-nums;
 }
 
-/* ---- subtle scrollbars ------------------------------------------------ */
+/* ---- brutalist scrollbars ------------------------------------------- */
 * {
   scrollbar-width: thin;
-  scrollbar-color: #1e293b transparent;
+  scrollbar-color: #333 transparent;
 }
 *::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
 }
 *::-webkit-scrollbar-thumb {
-  background: #1e293b;
-  border-radius: 8px;
+  background: #333;
+  border-radius: 0;
 }
 
-/* ---- status dot pulse ------------------------------------------------- */
+/* ---- status dot pulse ----------------------------------------------- */
 @keyframes fs-pulse {
   0% {
-    box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.55);
+    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.6);
   }
   70% {
-    box-shadow: 0 0 0 6px rgba(52, 211, 153, 0);
+    box-shadow: 0 0 0 8px rgba(34, 197, 94, 0);
   }
   100% {
-    box-shadow: 0 0 0 0 rgba(52, 211, 153, 0);
+    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0);
   }
 }
 .status-pulse {
-  animation: fs-pulse 1.8s ease-out infinite;
+  animation: fs-pulse 1.6s ease-out infinite;
 }
 
-/* ---- packet flowing between sender and receiver ----------------------- */
-@keyframes fs-flow {
-  from {
-    transform: translateY(0);
-    opacity: 1;
-  }
-  to {
-    transform: translateY(6px);
-    opacity: 0.45;
-  }
+/* ---- packet data flow animation ------------------------------------- */
+@keyframes fs-flow-right {
+  0% { transform: translateX(-8px); opacity: 0.3; }
+  50% { opacity: 1; }
+  100% { transform: translateX(8px); opacity: 0.3; }
 }
+@keyframes fs-flow-left {
+  0% { transform: translateX(8px); opacity: 0.3; }
+  50% { opacity: 1; }
+  100% { transform: translateX(-8px); opacity: 0.3; }
+}
+.flow-data {
+  animation: fs-flow-right 1s ease-in-out infinite;
+}
+.flow-ack {
+  animation: fs-flow-left 1s ease-in-out infinite;
+}
+
+/* ---- blink for timeout/loss ----------------------------------------- */
+@keyframes fs-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+.blink-warn {
+  animation: fs-blink 0.8s ease-in-out infinite;
+}
+
+/* ---- brutalist panel ------------------------------------------------ */
+.brutal-panel {
+  background: #111;
+  border: 2px solid #2a2a2a;
+  box-shadow: 4px 4px 0px #000;
+}
+.brutal-panel-sm {
+  background: #111;
+  border: 2px solid #2a2a2a;
+  box-shadow: 2px 2px 0px #000;
+}
+
+/* ---- flow active (legacy compat) ------------------------------------ */
 .flow-active {
-  animation: fs-flow 0.9s ease-in-out infinite alternate;
-}
-
-/* ---- header scan line (subtle terminal vibe) -------------------------- */
-@keyframes fs-scan {
-  from {
-    background-position: 0 0;
-  }
-  to {
-    background-position: 40px 40px;
-  }
-}
-.scan-line {
-  background-image: linear-gradient(
-    45deg,
-    transparent 65%,
-    rgba(34, 211, 238, 0.05) 66%,
-    transparent 67%
-  );
-  background-size: 40px 40px;
-  animation: fs-scan 8s linear infinite;
+  animation: fs-flow-right 0.9s ease-in-out infinite;
 }

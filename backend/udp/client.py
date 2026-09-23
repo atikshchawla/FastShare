@@ -43,7 +43,8 @@ class UDPClient:
                  timeout=protocol.DEFAULT_TIMEOUT,
                  max_retries=protocol.DEFAULT_MAX_RETRIES,
                  ack_loss_probability=0.0,
-                 emit=None, message=None, finished=None):
+                 emit=None, message=None, finished=None,
+                 verbose=None):
         self.host = host
         self.port = port
         self.packet_size = packet_size
@@ -57,6 +58,9 @@ class UDPClient:
         self.message = message or (lambda text: None)
         # finished(success: bool, detail: str) -> None
         self.finished = finished or (lambda ok, detail: None)
+        self._verbose = verbose
+        self.verbose = False
+        self.total_packets = 0
 
         self.sock = None
         self._stop = threading.Event()
@@ -84,6 +88,10 @@ class UDPClient:
         self._stop.clear()
         file_size = os.path.getsize(file_path)
         total_packets = math.ceil(file_size / self.packet_size)
+        self.total_packets = total_packets
+        self.verbose = (total_packets <= 500) if self._verbose is None else bool(self._verbose)
+        if not self.verbose:
+            self.message(f"Large transfer ({total_packets} packets) -- logging sampled every 50 packets")
 
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.sock.settimeout(self.timeout)
@@ -138,6 +146,9 @@ class UDPClient:
             if attempt > 0:
                 self._mark(seq, label, len(packet), STATUS_TIMEOUT, attempt)
                 self._mark(seq, label, len(packet), STATUS_RETRANSMITTED, attempt)
+                self.message(f"CLIENT -> {label} #{seq} RETRANSMIT (attempt {attempt + 1})")
+            else:
+                self.message(f"CLIENT -> {label} #{seq} sent")
             self._mark(seq, label, len(packet), STATUS_SENT, attempt)
             try:
                 self.sock.send(packet)
@@ -147,6 +158,7 @@ class UDPClient:
             self._mark(seq, label, len(packet), STATUS_WAITING, attempt)
             if self._wait_ack(seq):
                 self._mark(seq, label, len(packet), STATUS_ACKED, attempt)
+                self.message(f"CLIENT <- {label} ACK #{seq} received")
                 return True
         self._mark(seq, label, len(packet), STATUS_FAILED, self.max_retries)
         return False
@@ -158,7 +170,11 @@ class UDPClient:
             if attempt > 0:
                 self._mark(seq, "DATA", len(packet), STATUS_TIMEOUT, attempt)
                 self._mark(seq, "DATA", len(packet), STATUS_RETRANSMITTED, attempt)
-            self._mark(seq, "DATA", len(packet), STATUS_SENT, attempt)
+                self.message(f"CLIENT -> DATA #{seq}/{self.total_packets} RETRANSMIT (attempt {attempt + 1})")
+            else:
+                self._mark(seq, "DATA", len(packet), STATUS_SENT, attempt)
+                if self.verbose or seq == 1 or seq == self.total_packets or seq % 50 == 0:
+                    self.message(f"CLIENT -> DATA #{seq}/{self.total_packets} sent ({len(chunk)}B)")
             try:
                 self.sock.send(packet)
             except OSError as exc:
@@ -167,6 +183,8 @@ class UDPClient:
             self._mark(seq, "DATA", len(packet), STATUS_WAITING, attempt)
             if self._wait_ack(seq):
                 self._mark(seq, "DATA", len(packet), STATUS_ACKED, attempt)
+                if self.verbose or seq == 1 or seq == self.total_packets or seq % 50 == 0:
+                    self.message(f"CLIENT <- ACK #{seq} received")
                 return True
             self.message(f"DATA #{seq} lost -> timeout ({attempt + 1})")
         self._mark(seq, "DATA", len(packet), STATUS_FAILED, self.max_retries)

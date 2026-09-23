@@ -1,8 +1,7 @@
 "use client";
 
 import { Loader2, Power, X } from "lucide-react";
-import { Badge, Panel, StatusDot } from "@/components/ui";
-import { cn } from "@/lib/cn";
+import { Badge, StatusDot } from "@/components/ui";
 import type { Snapshot } from "@/lib/types";
 
 export function SettingsModal({
@@ -25,82 +24,74 @@ export function SettingsModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-4"
       onClick={onClose}
     >
-      <Panel
-        className="w-full max-w-md"
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-md border-2 border-neutral-700 bg-neutral-900 shadow-[6px_6px_0px_#000]"
       >
-        <div onClick={(e) => e.stopPropagation()}>
-          <div className="flex items-center justify-between border-b border-slate-800/70 px-4 py-3">
-            <h2 className="text-sm font-semibold uppercase tracking-widest text-slate-300">
-              Settings
-            </h2>
-            <button
-              onClick={onClose}
-              className="flex h-7 w-7 items-center justify-center rounded-md text-slate-500 hover:text-slate-200"
-            >
-              <X size={16} />
-            </button>
-          </div>
-
-          <div className="space-y-3 p-4">
-            <div className="flex items-center justify-between rounded-lg border border-slate-800 bg-[#070b12] px-3 py-3">
-              <div className="flex items-center gap-2">
-                <StatusDot tone={running ? "green" : "slate"} pulse={running} />
-                <span className="text-[13px] font-semibold text-slate-200">
-                  UDP Receiver {running ? "Running" : "Stopped"}
-                </span>
-              </div>
-              <Badge tone={running ? "green" : "slate"}>
-                port {status?.server_port ?? 5001}
-              </Badge>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2 font-mono text-[12px] text-slate-400">
-              <div className="rounded-md border border-slate-800 bg-[#070b12] px-3 py-2">
-                sessions <span className="text-slate-200">{status?.server_sessions ?? 0}</span>
-              </div>
-              <div className="rounded-md border border-slate-800 bg-[#070b12] px-3 py-2">
-                server IP <span className="text-slate-200">{status?.config.server_ip}</span>
-              </div>
-            </div>
-
-            {!running ? (
-              <button
-                onClick={onStart}
-                disabled={busy}
-                className={cn(
-                  "flex w-full items-center justify-center gap-2 rounded-lg border border-emerald-500/50",
-                  "bg-emerald-500/15 px-4 py-2.5 text-sm font-semibold text-emerald-300",
-                  "transition hover:bg-emerald-500/25 disabled:opacity-50",
-                )}
-              >
-                <Power size={15} /> Start UDP Server
-              </button>
-            ) : (
-              <button
-                onClick={onStop}
-                disabled={busy}
-                className={cn(
-                  "flex w-full items-center justify-center gap-2 rounded-lg border border-rose-500/50",
-                  "bg-rose-500/10 px-4 py-2.5 text-sm font-semibold text-rose-300",
-                  "transition hover:bg-rose-500/20 disabled:opacity-50",
-                )}
-              >
-                {busy ? <Loader2 size={15} className="animate-spin" /> : <Power size={15} />}
-                Stop UDP Server
-              </button>
-            )}
-
-            <p className="text-[11px] leading-5 text-slate-500">
-              Server IP, port, packet size and timeout are edited in the{" "}
-              <span className="text-slate-300">Transfer Configuration</span>{" "}
-              card. Changing the port requires restarting the receiver.
-            </p>
-          </div>
+        <div className="flex items-center justify-between border-b-2 border-neutral-700 bg-neutral-800 px-4 py-3">
+          <h2 className="text-sm font-black uppercase tracking-widest text-white">
+            SOCKET &amp; RECEIVER CONTROLS
+          </h2>
+          <button
+            onClick={onClose}
+            className="flex h-7 w-7 items-center justify-center border-2 border-neutral-600 bg-neutral-900 text-neutral-400 hover:text-white"
+          >
+            <X size={15} />
+          </button>
         </div>
-      </Panel>
+
+        <div className="p-4 space-y-4 font-mono text-xs">
+          <div className="flex items-center justify-between border-2 border-neutral-700 bg-neutral-950 p-3">
+            <div className="flex items-center gap-2.5">
+              <StatusDot tone={running ? "green" : "slate"} pulse={running} />
+              <span className="font-bold text-white uppercase">
+                UDP RECEIVER {running ? "ONLINE" : "STOPPED"}
+              </span>
+            </div>
+            <Badge tone={running ? "green" : "slate"}>
+              PORT {status?.server_port ?? 5001}
+            </Badge>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <div className="border-2 border-neutral-700 bg-neutral-950 p-2.5">
+              <span className="text-[10px] text-neutral-500 uppercase block">Sessions</span>
+              <span className="text-sm font-black text-white">{status?.server_sessions ?? 0}</span>
+            </div>
+            <div className="border-2 border-neutral-700 bg-neutral-950 p-2.5">
+              <span className="text-[10px] text-neutral-500 uppercase block">Bound IP</span>
+              <span className="text-sm font-black text-white">{status?.config.server_ip ?? "127.0.0.1"}</span>
+            </div>
+          </div>
+
+          {!running ? (
+            <button
+              onClick={onStart}
+              disabled={busy}
+              className="flex w-full items-center justify-center gap-2 border-2 border-green-500 bg-green-500 py-3 text-xs font-black uppercase tracking-widest text-black shadow-[3px_3px_0px_#000] hover:bg-green-400 disabled:opacity-50 cursor-pointer"
+            >
+              {busy ? <Loader2 size={15} className="animate-spin" /> : <Power size={15} />}
+              [ START UDP RECEIVER ]
+            </button>
+          ) : (
+            <button
+              onClick={onStop}
+              disabled={busy}
+              className="flex w-full items-center justify-center gap-2 border-2 border-red-500 bg-red-500/20 py-3 text-xs font-black uppercase tracking-widest text-red-300 shadow-[3px_3px_0px_#000] hover:bg-red-500/30 disabled:opacity-50 cursor-pointer"
+            >
+              {busy ? <Loader2 size={15} className="animate-spin" /> : <Power size={15} />}
+              [ STOP UDP RECEIVER ]
+            </button>
+          )}
+
+          <p className="border-t border-neutral-800 pt-2 text-[11px] text-neutral-500">
+            Note: UDP port updates require stopping and restarting the receiver thread in Python backend.
+          </p>
+        </div>
+      </div>
     </div>
   );
 }

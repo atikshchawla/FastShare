@@ -1,8 +1,7 @@
 "use client";
 
-import { Flame } from "lucide-react";
+import { Activity } from "lucide-react";
 import { Panel, PanelHeader } from "@/components/ui";
-import { cn } from "@/lib/cn";
 import { formatBytes, formatSeconds } from "@/lib/types";
 import type { Snapshot } from "@/lib/types";
 
@@ -14,59 +13,58 @@ function percent(status: Snapshot): number {
 export function TransferProgress({ status }: { status: Snapshot | null }) {
   const pct = status ? percent(status) : 0;
   const transferring = status?.transfer_status === "transferring";
+  const completed = status?.transfer_status === "completed";
 
   return (
     <Panel>
       <PanelHeader
-        title="Transfer Progress"
-        icon={<Flame size={14} />}
+        title="TRANSFER PROGRESS & THROUGHPUT"
+        icon={<Activity size={15} />}
         right={
-          status ? (
-            <span
-              className={cn(
-                "font-mono text-xl font-bold",
-                transferring ? "text-cyan-300" : "text-slate-200",
-              )}
-            >
-              {Math.round(pct)}%
-            </span>
-          ) : (
-            <span className="font-mono text-xl text-slate-600">--%</span>
-          )
+          <span className="font-mono text-xl font-black text-cyan-400">
+            {Math.round(pct)}%
+          </span>
         }
       />
-      <div className="p-4">
-        <div className="h-3 overflow-hidden rounded-full border border-slate-800 bg-[#070b12]">
+      
+      <div className="p-4 space-y-3 font-mono">
+        {/* Neo-brutalist progress track */}
+        <div className="h-6 border-2 border-neutral-700 bg-neutral-950 p-0.5">
           <div
-            className="h-full rounded-full bg-gradient-to-r from-cyan-500 to-emerald-400 transition-[width] duration-300"
+            className={`h-full transition-all duration-300 ${
+              completed
+                ? "bg-green-500"
+                : transferring
+                ? "bg-cyan-400"
+                : "bg-neutral-700"
+            }`}
             style={{ width: `${Math.max(0, Math.min(100, pct))}%` }}
           />
         </div>
 
-        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 font-mono text-[12px]">
-          <span className="text-slate-400">
-            <span className="text-slate-200">
-              {formatBytes(status?.confirmed_bytes ?? 0)}
-            </span>{" "}
-            / {formatBytes(status?.file_size ?? 0)}
-          </span>
-          <span className="text-slate-400">
-            Packet{" "}
-            <span className="text-slate-200">
-              {status?.packets_acked ?? 0}
-            </span>{" "}
-            / {status?.total_packets ?? 0}
-          </span>
-          <span className="text-slate-500">
-            {formatSeconds(status?.elapsed_seconds ?? 0)}s
-          </span>
-        </div>
+        {/* Telemetry info row */}
+        <div className="grid grid-cols-3 gap-2 border-2 border-neutral-800 bg-neutral-950 p-2 text-xs">
+          <div>
+            <span className="block text-[10px] font-bold text-neutral-500 uppercase">Bytes Confirmed</span>
+            <span className="font-bold text-white">
+              {formatBytes(status?.confirmed_bytes ?? 0)} / {formatBytes(status?.file_size ?? 0)}
+            </span>
+          </div>
 
-        {!status && (
-          <p className="mt-2 text-[11px] text-slate-600">
-            waiting for controller
-          </p>
-        )}
+          <div className="text-center">
+            <span className="block text-[10px] font-bold text-neutral-500 uppercase">Frames ACKed</span>
+            <span className="font-bold text-cyan-300">
+              {status?.packets_acked ?? 0} / {status?.total_packets ?? 0}
+            </span>
+          </div>
+
+          <div className="text-right">
+            <span className="block text-[10px] font-bold text-neutral-500 uppercase">Elapsed Time</span>
+            <span className="font-bold text-neutral-300">
+              {formatSeconds(status?.elapsed_seconds ?? 0)}s
+            </span>
+          </div>
+        </div>
       </div>
     </Panel>
   );

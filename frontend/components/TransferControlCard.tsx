@@ -1,8 +1,7 @@
 "use client";
 
-import { Check, Loader2, Send, X, XCircle } from "lucide-react";
+import { Check, Loader2, Send, X, XOctagon } from "lucide-react";
 import { Badge, Panel, PanelHeader } from "@/components/ui";
-import { cn } from "@/lib/cn";
 import type { Snapshot } from "@/lib/types";
 
 export function TransferControlCard({
@@ -29,131 +28,118 @@ export function TransferControlCard({
   const canStart = serverRunning && hasFile && !transferring && !busy;
 
   const checks = [
-    { id: "server", label: "UDP receiver running", ok: serverRunning },
-    { id: "file", label: "A file is selected", ok: hasFile },
-    { id: "busy", label: "No transfer in progress", ok: !transferring },
+    { id: "server", label: "UDP Receiver Online", ok: serverRunning },
+    { id: "file", label: "File Selected & Segmented", ok: hasFile },
+    { id: "busy", label: "Channel Available", ok: !transferring },
   ];
-
-  const blockReason = !serverRunning
-    ? "Start the UDP receiver (above) to enable transfers."
-    : !hasFile
-      ? "Select a file to enable Start Transfer."
-      : "Wait for the current action to finish.";
 
   return (
     <Panel>
-      <PanelHeader title="3 · Transfer Control" icon={<Send size={14} />} />
-      <div className="flex flex-wrap items-center gap-3 p-4">
+      <PanelHeader
+        title="TRANSFER EXECUTION"
+        icon={<Send size={15} />}
+        right={
+          transferring ? (
+            <Badge tone="cyan">ACTIVE</Badge>
+          ) : completed ? (
+            <Badge tone="green">COMPLETED</Badge>
+          ) : (
+            <Badge tone="slate">STANDBY</Badge>
+          )
+        }
+      />
+
+      <div className="p-4">
+        {/* Main Action Button */}
         {!transferring ? (
           <button
             onClick={onStart}
             disabled={!canStart}
-            title={!canStart ? blockReason : undefined}
-            className={cn(
-              "inline-flex items-center gap-2 rounded-lg border border-emerald-500/50",
-              "bg-emerald-500/15 px-5 py-2.5 text-sm font-semibold text-emerald-300",
-              "transition hover:bg-emerald-500/25",
-              "disabled:cursor-not-allowed disabled:opacity-40",
-            )}
+            className={`flex w-full items-center justify-center gap-3 border-2 border-green-500 py-3.5 text-sm font-black uppercase tracking-widest transition active:translate-x-0.5 active:translate-y-0.5 ${
+              canStart
+                ? "bg-green-500 text-black shadow-[4px_4px_0px_#000] hover:bg-green-400 cursor-pointer"
+                : "bg-neutral-800 text-neutral-500 border-neutral-700 cursor-not-allowed opacity-60"
+            }`}
           >
-            <Send size={16} /> Start Transfer
+            <Send size={16} />
+            [ START TRANSFER ]
           </button>
         ) : (
-          <>
-            <span className="inline-flex items-center gap-2 rounded-lg border border-cyan-500/40 bg-cyan-500/10 px-5 py-2.5 text-sm font-semibold text-cyan-300">
-              <Loader2 size={16} className="animate-spin" />
-              Transferring...
-            </span>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <div className="flex flex-1 items-center justify-center gap-2 border-2 border-cyan-500 bg-cyan-950/30 py-3 font-mono text-xs font-black uppercase tracking-wider text-cyan-300 shadow-[3px_3px_0px_#000]">
+              <Loader2 size={15} className="animate-spin text-cyan-400" />
+              TRANSMITTING VIA UDP...
+            </div>
             <button
               onClick={onCancel}
               disabled={busy}
-              className={cn(
-                "inline-flex items-center gap-2 rounded-lg border border-rose-500/50",
-                "bg-rose-500/10 px-4 py-2.5 text-sm font-semibold text-rose-300",
-                "transition hover:bg-rose-500/20 disabled:opacity-50",
-              )}
+              className="flex items-center justify-center gap-2 border-2 border-red-500 bg-red-500/20 px-6 py-3 font-mono text-xs font-black uppercase tracking-wider text-red-300 shadow-[3px_3px_0px_#000] transition active:translate-x-0.5 active:translate-y-0.5 hover:bg-red-500/30 disabled:opacity-50 cursor-pointer"
             >
-              <XCircle size={16} /> Cancel
+              <XOctagon size={15} />
+              CANCEL
             </button>
-          </>
+          </div>
         )}
 
-        <div className="ml-auto text-right">
-          {completed && (
-            <div>
-              <Badge tone="green" className="px-2.5 py-1 text-[12px]">
-                ✓ Transfer Complete
-              </Badge>
-              {status?.received_path && (
-                <p
-                  className="mt-1 max-w-[320px] truncate font-mono text-[10px] text-slate-500"
-                  title={status.received_path}
-                >
-                  {status.received_path}
-                </p>
-              )}
-            </div>
-          )}
-          {failed && (
-            <div>
-              <Badge tone="red" className="px-2.5 py-1 text-[12px]">
-                ✕ Transfer Failed
-              </Badge>
-              {status?.transfer_error && (
-                <p className="mt-1 max-w-[320px] truncate font-mono text-[10px] text-rose-400">
-                  {status.transfer_error}
-                </p>
-              )}
-            </div>
-          )}
-          {cancelled && (
-            <Badge tone="amber" className="px-2.5 py-1 text-[12px]">
-              Aborted
-            </Badge>
-          )}
-        </div>
-      </div>
+        {/* Status result alert */}
+        {completed && (
+          <div className="mt-3 border-2 border-green-500 bg-green-950/20 p-3 font-mono text-xs">
+            <p className="font-black text-green-400">✓ FILE TRANSFER COMPLETED SUCCESSFULLY</p>
+            {status?.received_path && (
+              <p className="mt-1 truncate text-[11px] text-neutral-400" title={status.received_path}>
+                Destination: {status.received_path}
+              </p>
+            )}
+          </div>
+        )}
+        {failed && (
+          <div className="mt-3 border-2 border-red-500 bg-red-950/20 p-3 font-mono text-xs">
+            <p className="font-black text-red-400">✕ TRANSFER FAILED</p>
+            {status?.transfer_error && (
+              <p className="mt-1 text-[11px] text-neutral-400">{status.transfer_error}</p>
+            )}
+          </div>
+        )}
+        {cancelled && (
+          <div className="mt-3 border-2 border-amber-500 bg-amber-950/20 p-3 font-mono text-xs text-amber-400 font-bold">
+            ⚠ TRANSFER ABORTED BY USER
+          </div>
+        )}
 
-      <div className="border-t border-slate-800/70 px-4 py-3">
-        <p className="mb-2 text-[11px] font-semibold uppercase tracking-widest text-slate-500">
-          Ready to start?
-        </p>
-        <div className="space-y-1.5">
-          {checks.map((c) => (
-            <div
-              key={c.id}
-              className="flex items-center justify-between gap-3 rounded-md px-1 py-0.5"
-            >
-              <span className="flex items-center gap-2 text-[12px] text-slate-300">
-                {c.ok ? (
-                  <Check size={13} className="text-emerald-400" />
-                ) : (
-                  <X size={13} className="text-rose-400" />
-                )}
-                {c.label}
-              </span>
-              {!c.ok && c.id === "server" && (
-                <button
-                  onClick={onStartServer}
-                  disabled={busy}
-                  className="rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-semibold text-emerald-300 transition hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  Start Server
-                </button>
-              )}
-              {!c.ok && c.id === "file" && (
-                <span className="text-[11px] text-slate-500">
-                  add one below
-                </span>
-              )}
-            </div>
-          ))}
-        </div>
-        {!canStart && !transferring && (
-          <p className="mt-2 font-mono text-[11px] text-amber-400/80">
-            {blockReason}
+        {/* Readiness Pre-flight Checklist */}
+        <div className="mt-4 border-t-2 border-neutral-700 pt-3">
+          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-neutral-500 mb-2">
+            PRE-FLIGHT READINESS
           </p>
-        )}
+          <div className="space-y-1.5 font-mono text-xs">
+            {checks.map((c) => (
+              <div
+                key={c.id}
+                className="flex items-center justify-between border-2 border-neutral-800 bg-neutral-950 px-3 py-1.5"
+              >
+                <div className="flex items-center gap-2">
+                  {c.ok ? (
+                    <Check size={14} className="text-green-400" />
+                  ) : (
+                    <X size={14} className="text-red-400" />
+                  )}
+                  <span className={c.ok ? "text-neutral-200" : "text-neutral-500"}>
+                    {c.label}
+                  </span>
+                </div>
+                {!c.ok && c.id === "server" && (
+                  <button
+                    onClick={onStartServer}
+                    disabled={busy}
+                    className="border border-green-500 bg-green-500/20 px-2 py-0.5 text-[10px] font-black uppercase text-green-300 hover:bg-green-500/30"
+                  >
+                    Start Server
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
     </Panel>
   );

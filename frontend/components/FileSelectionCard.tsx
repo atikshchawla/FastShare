@@ -1,9 +1,8 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { CloudUpload, FileText, Trash2 } from "lucide-react";
+import { FileUp, HardDrive, Trash2 } from "lucide-react";
 import { Badge, Panel, PanelHeader } from "@/components/ui";
-import { cn } from "@/lib/cn";
 import { formatBytes } from "@/lib/types";
 import type { SelectedFile } from "@/lib/types";
 
@@ -28,9 +27,7 @@ export function FileSelectionCard({
     if (!file) return;
     if (file.size > MAX_FILE_MB * 1024 * 1024) {
       setWarning(
-        `File exceeds the ${MAX_FILE_MB} MB limit for this demo (${
-          (file.size / (1024 * 1024)).toFixed(1)
-        } MB).`,
+        `FILE EXCEEDS ${MAX_FILE_MB}MB LIMIT FOR DEMO (${(file.size / (1024 * 1024)).toFixed(1)}MB).`,
       );
       return;
     }
@@ -46,95 +43,95 @@ export function FileSelectionCard({
   return (
     <Panel>
       <PanelHeader
-        title="2 · File Selection"
-        icon={<FileText size={14} />}
+        title="FILE SELECTION"
+        icon={<HardDrive size={15} />}
         right={
-          selectedFile && (
-            <Badge tone="cyan">max {MAX_FILE_MB} MB</Badge>
+          selectedFile ? (
+            <Badge tone="cyan">READY</Badge>
+          ) : (
+            <Badge tone="slate">MAX {MAX_FILE_MB}MB</Badge>
           )
         }
       />
 
-      {!selectedFile ? (
-        <button
-          type="button"
-          disabled={disabled}
-          onClick={() => inputRef.current?.click()}
-          onDragOver={(e) => {
-            e.preventDefault();
-            setDragging(true);
-          }}
-          onDragLeave={() => setDragging(false)}
-          onDrop={(e) => {
-            e.preventDefault();
-            setDragging(false);
-            pick(e.dataTransfer.files?.[0]);
-          }}
-          className={cn(
-            "flex w-full flex-col items-center gap-3 px-6 py-10 text-center transition",
-            "border-2 border-dashed rounded-xl m-3 bg-slate-900/30",
-            dragging
-              ? "border-cyan-400/70 text-cyan-300"
-              : "border-slate-800 text-slate-400 hover:border-slate-600",
-            disabled && "cursor-not-allowed opacity-50",
-          )}
-        >
-          <CloudUpload size={28} className={dragging ? "text-cyan-300" : ""} />
-          <div>
-            <p className="text-sm font-medium text-slate-200">
-              Drop your file here
+      <div className="p-4">
+        {!selectedFile ? (
+          <button
+            type="button"
+            disabled={disabled}
+            onClick={() => inputRef.current?.click()}
+            onDragOver={(e) => {
+              e.preventDefault();
+              setDragging(true);
+            }}
+            onDragLeave={() => setDragging(false)}
+            onDrop={(e) => {
+              e.preventDefault();
+              setDragging(false);
+              pick(e.dataTransfer.files?.[0]);
+            }}
+            className={`flex w-full flex-col items-center justify-center border-2 border-dashed p-6 text-center transition ${
+              dragging
+                ? "border-cyan-400 bg-cyan-950/30 text-cyan-300"
+                : "border-neutral-700 bg-neutral-950 text-neutral-400 hover:border-neutral-500 hover:text-white"
+            } ${disabled ? "cursor-not-allowed opacity-50" : "cursor-pointer"}`}
+          >
+            <FileUp size={28} className="mb-2 text-cyan-400" />
+            <p className="font-mono text-xs font-black uppercase tracking-wider text-neutral-200">
+              DROP FILE OR CLICK TO BROWSE
             </p>
-            <p className="mt-1 text-xs text-slate-500">or browse files</p>
-          </div>
-          <p className="font-mono text-[11px] text-slate-600">
-            Maximum size: {MAX_FILE_MB} MB · split into {packetSize}-byte payloads
-          </p>
-        </button>
-      ) : (
-        <div className="p-4">
-          <div className="flex items-start gap-3 rounded-lg border border-slate-800 bg-slate-900/40 p-3">
-            <FileText size={26} className="mt-0.5 shrink-0 text-cyan-400" />
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-semibold text-slate-100">
-                {selectedFile.name}
-              </p>
-              <p className="mt-2 grid grid-cols-2 gap-1 font-mono text-[12px] text-slate-400">
-                <span>
-                  Size <span className="text-slate-200">
-                    {formatBytes(selectedFile.size)}
-                  </span>
+            <p className="mt-1 font-mono text-[10px] text-neutral-500">
+              Will be segmented into {packetSize}-byte UDP payloads
+            </p>
+          </button>
+        ) : (
+          <div className="border-2 border-cyan-500 bg-cyan-950/20 p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0 flex-1">
+                <span className="text-[10px] font-black uppercase tracking-widest text-cyan-400">
+                  SELECTED FILE
                 </span>
-                <span>
-                  Packets{" "}
-                  <span className="text-slate-200">
-                    ~{packets}
-                  </span>
-                </span>
-              </p>
+                <p className="truncate font-mono text-sm font-black text-white">
+                  {selectedFile.name}
+                </p>
+              </div>
+              <button
+                onClick={() => onSelect(null)}
+                disabled={disabled}
+                title="Remove file"
+                className="flex h-8 w-8 items-center justify-center border-2 border-red-500 bg-red-500/10 text-red-400 shadow-[2px_2px_0px_#000] hover:bg-red-500/20 disabled:opacity-50"
+              >
+                <Trash2 size={14} />
+              </button>
             </div>
-            <button
-              onClick={() => onSelect(null)}
-              title="Remove file"
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-slate-800 text-slate-500 transition hover:border-rose-500/50 hover:text-rose-400"
-            >
-              <Trash2 size={15} />
-            </button>
-          </div>
-          {warning && (
-            <p className="mt-2 rounded-md border border-rose-500/30 bg-rose-500/10 px-3 py-2 font-mono text-[11px] text-rose-400">
-              {warning}
-            </p>
-          )}
-        </div>
-      )}
 
-      <input
-        ref={inputRef}
-        type="file"
-        className="hidden"
-        disabled={disabled || !!selectedFile}
-        onChange={(e) => pick(e.target.files?.[0])}
-      />
+            <div className="mt-3 grid grid-cols-2 gap-2 border-t-2 border-cyan-500/30 pt-3 font-mono text-xs">
+              <div className="border-2 border-neutral-700 bg-neutral-900 p-2">
+                <span className="text-[10px] font-bold text-neutral-400 block uppercase">File Size</span>
+                <span className="font-black text-white">{formatBytes(selectedFile.size)}</span>
+              </div>
+              <div className="border-2 border-neutral-700 bg-neutral-900 p-2">
+                <span className="text-[10px] font-bold text-neutral-400 block uppercase">Total Packets</span>
+                <span className="font-black text-cyan-300">~{packets} packets</span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {warning && (
+          <div className="mt-3 border-2 border-red-500 bg-red-500/10 p-2 font-mono text-[11px] font-bold text-red-400">
+            {warning}
+          </div>
+        )}
+
+        <input
+          ref={inputRef}
+          type="file"
+          className="hidden"
+          disabled={disabled || !!selectedFile}
+          onChange={(e) => pick(e.target.files?.[0])}
+        />
+      </div>
     </Panel>
   );
 }

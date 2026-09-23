@@ -125,7 +125,7 @@ def transfer_status():
 def transfer_packets(limit: int = 150):
     limit = max(1, min(limit, 500))
     return {"packets": manager.packet_log(limit),
-            "feed": manager.recent_feed(60)}
+            "feed": manager.recent_feed(500)}
 
 
 # ------------------------------------------------------------------ testing
