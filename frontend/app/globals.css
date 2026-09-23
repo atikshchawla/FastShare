@@ -1,0 +1,92 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: #06090f;
+  --foreground: #e2e8f0;
+}
+
+html,
+body {
+  color: var(--foreground);
+  background: var(--background);
+}
+
+body {
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  background-image:
+    radial-gradient(1200px 500px at 15% -10%, rgba(34, 211, 238, 0.07), transparent 60%),
+    radial-gradient(900px 400px at 90% 0%, rgba(16, 185, 129, 0.05), transparent 55%);
+  background-attachment: fixed;
+}
+
+/* ---- technical mono helpers ------------------------------------------ */
+.font-mono-num {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- subtle scrollbars ------------------------------------------------ */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #1e293b transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-thumb {
+  background: #1e293b;
+  border-radius: 8px;
+}
+
+/* ---- status dot pulse ------------------------------------------------- */
+@keyframes fs-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.55);
+  }
+  70% {
+    box-shadow: 0 0 0 6px rgba(52, 211, 153, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(52, 211, 153, 0);
+  }
+}
+.status-pulse {
+  animation: fs-pulse 1.8s ease-out infinite;
+}
+
+/* ---- packet flowing between sender and receiver ----------------------- */
+@keyframes fs-flow {
+  from {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateY(6px);
+    opacity: 0.45;
+  }
+}
+.flow-active {
+  animation: fs-flow 0.9s ease-in-out infinite alternate;
+}
+
+/* ---- header scan line (subtle terminal vibe) -------------------------- */
+@keyframes fs-scan {
+  from {
+    background-position: 0 0;
+  }
+  to {
+    background-position: 40px 40px;
+  }
+}
+.scan-line {
+  background-image: linear-gradient(
+    45deg,
+    transparent 65%,
+    rgba(34, 211, 238, 0.05) 66%,
+    transparent 67%
+  );
+  background-size: 40px 40px;
+  animation: fs-scan 8s linear infinite;
+}
