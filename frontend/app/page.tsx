@@ -108,7 +108,8 @@ export default function Home() {
               status={s}
               hasFile={!!t.selectedFile}
               busy={t.busy}
-              onStart={t.startTransfer}
+              resumeInfo={t.resumeInfo}
+              onStart={(resume) => void t.startTransfer(resume)}
               onCancel={t.cancelTransfer}
               onStartServer={t.startServer}
             />

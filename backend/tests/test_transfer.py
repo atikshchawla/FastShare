@@ -97,7 +97,7 @@ def test_start_packet_metadata_is_binary_correct(random_file):
     assert seq == protocol.SEQ_START
     assert ptype == protocol.PACKET_TYPE_START
     assert protocol.parse_start_meta(parsed) == (
-        "wire.bin", src.stat().st_size, total, 1024)
+        "wire.bin", src.stat().st_size, total, 1024, True)
 
 
 def test_received_file_is_renamed_from_part_suffix(random_file):

@@ -42,6 +42,14 @@ export function TransferProgress({ status }: { status: Snapshot | null }) {
           />
         </div>
 
+        {(status?.resumed_from_seq ?? 0) > 0 && (
+          <div className="border-2 border-amber-500/60 bg-amber-950/20 px-2 py-1.5 text-[11px] font-bold text-amber-300">
+            ⏩ SESSION RESUMED AT PACKET #{(status?.resumed_from_seq ?? 0) + 1} —{" "}
+            {formatBytes(status?.resumed_bytes ?? 0)} reused from disk, not
+            re-sent
+          </div>
+        )}
+
         {/* Telemetry info row */}
         <div className="grid grid-cols-3 gap-2 border-2 border-neutral-800 bg-neutral-950 p-2 text-xs">
           <div>

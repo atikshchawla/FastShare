@@ -1,13 +1,15 @@
 "use client";
 
-import { Check, Loader2, Send, X, XOctagon } from "lucide-react";
+import { Check, History, Loader2, Send, X, XOctagon } from "lucide-react";
 import { Badge, Panel, PanelHeader } from "@/components/ui";
-import type { Snapshot } from "@/lib/types";
+import { formatBytes } from "@/lib/types";
+import type { ResumeInfo, Snapshot } from "@/lib/types";
 
 export function TransferControlCard({
   status,
   hasFile,
   busy,
+  resumeInfo,
   onStart,
   onCancel,
   onStartServer,
@@ -15,7 +17,8 @@ export function TransferControlCard({
   status: Snapshot | null;
   hasFile: boolean;
   busy: boolean;
-  onStart: () => void;
+  resumeInfo?: ResumeInfo | null;
+  onStart: (resume: boolean) => void;
   onCancel: () => void;
   onStartServer: () => void;
 }) {
@@ -26,6 +29,7 @@ export function TransferControlCard({
   const serverRunning = status?.server_status === "running";
 
   const canStart = serverRunning && hasFile && !transferring && !busy;
+  const resumable = !!resumeInfo?.available && !transferring && hasFile;
 
   const checks = [
     { id: "server", label: "UDP Receiver Online", ok: serverRunning },
@@ -53,7 +57,7 @@ export function TransferControlCard({
         {/* Main Action Button */}
         {!transferring ? (
           <button
-            onClick={onStart}
+            onClick={() => onStart(true)}
             disabled={!canStart}
             className={`flex w-full items-center justify-center gap-3 border-2 border-green-500 py-3.5 text-sm font-black uppercase tracking-widest transition active:translate-x-0.5 active:translate-y-0.5 ${
               canStart
@@ -78,6 +82,40 @@ export function TransferControlCard({
               <XOctagon size={15} />
               CANCEL
             </button>
+          </div>
+        )}
+
+        {/* Resume banner: an interrupted copy of THIS file is on the receiver */}
+        {resumable && resumeInfo && (
+          <div className="mt-3 border-2 border-amber-500 bg-amber-950/20 p-3 font-mono text-xs">
+            <div className="flex items-center gap-2">
+              <History size={14} className="text-amber-400 shrink-0" />
+              <p className="font-black text-amber-400">
+                PARTIAL TRANSFER FOUND — {resumeInfo.percent}% ALREADY RECEIVED
+              </p>
+            </div>
+            <p className="mt-1 text-[11px] text-neutral-400">
+              {formatBytes(resumeInfo.received_bytes)} of{" "}
+              {formatBytes(resumeInfo.file_size)} sit on the receiver; resuming
+              continues at packet #{resumeInfo.resumed_seq + 1} of{" "}
+              {resumeInfo.total_packets}.
+            </p>
+            <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+              <button
+                onClick={() => onStart(true)}
+                disabled={!canStart}
+                className="flex flex-1 items-center justify-center gap-2 border-2 border-amber-500 bg-amber-500 px-3 py-2 text-[11px] font-black uppercase tracking-wider text-black shadow-[3px_3px_0px_#000] transition active:translate-x-0.5 active:translate-y-0.5 hover:bg-amber-400 disabled:opacity-50 cursor-pointer"
+              >
+                ▶ RESUME FROM PACKET #{resumeInfo.resumed_seq + 1}
+              </button>
+              <button
+                onClick={() => onStart(false)}
+                disabled={!canStart}
+                className="flex items-center justify-center gap-2 border-2 border-neutral-600 bg-neutral-900 px-3 py-2 text-[11px] font-black uppercase tracking-wider text-neutral-300 shadow-[3px_3px_0px_#000] transition active:translate-x-0.5 active:translate-y-0.5 hover:bg-neutral-800 disabled:opacity-50 cursor-pointer"
+              >
+                START OVER
+              </button>
+            </div>
           </div>
         )}
 

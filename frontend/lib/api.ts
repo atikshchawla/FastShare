@@ -10,6 +10,7 @@ import type {
   ApiOk,
   Config,
   PacketResponse,
+  ResumeInfo,
   Snapshot,
   StatusResponse,
   TestingConfig,
@@ -54,15 +55,20 @@ export const api = {
     post("/api/testing/config", {
       loss_enabled: cfg.loss_enabled,
       loss_probability: cfg.loss_probability,
+      corrupt_enabled: cfg.corrupt_enabled,
+      corrupt_probability: cfg.corrupt_probability,
     }),
 
-  startTransfer: async (file: File) => {
+  startTransfer: async (file: File, resume = true) => {
     const fd = new FormData();
     fd.append("file", file);
-    const res = await fetch(`${BASE}/api/transfer/start`, {
-      method: "POST",
-      body: fd,
-    });
+    const res = await fetch(
+      `${BASE}/api/transfer/start?resume=${resume ? "true" : "false"}`,
+      {
+        method: "POST",
+        body: fd,
+      },
+    );
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
       throw new Error(String(body.detail ?? body.error ?? `HTTP ${res.status}`));
@@ -71,6 +77,15 @@ export const api = {
   },
 
   cancelTransfer: () => post("/api/transfer/cancel"),
+
+  resumeCheck: (name: string, size: number) =>
+    json<ResumeInfo>(
+      `/api/resume/check?name=${encodeURIComponent(name)}&size=${size}`,
+    ),
+  resumeDiscard: (name: string, size: number) =>
+    post(
+      `/api/resume/discard?name=${encodeURIComponent(name)}&size=${size}`,
+    ),
 };
 
 /** Lightweight error that still surfaces the controller message. */

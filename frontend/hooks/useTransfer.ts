@@ -1,15 +1,17 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import type {
   Config,
   FeedLine,
   PacketEntry,
+  ResumeInfo,
   SelectedFile,
   Snapshot,
   StatusResponse,
   TestingConfig,
+  TransferStatus,
 } from "@/lib/types";
 
 /**
@@ -28,6 +30,7 @@ export function useTransfer() {
   const [busy, setBusy] = useState(false);
   const [selectedFile, setSelectedFile] = useState<SelectedFile | null>(null);
   const [rawFile, setRawFile] = useState<File | null>(null);
+  const [resumeInfo, setResumeInfo] = useState<ResumeInfo | null>(null);
 
   // ---- polling ----------------------------------------------------------
   useEffect(() => {
@@ -78,6 +81,37 @@ export function useTransfer() {
     }
   }, []);
 
+  // ---- resume -----------------------------------------------------------
+  /** Ask the controller whether an interrupted copy of this file exists. */
+  const refreshResume = useCallback(async (file: File | null) => {
+    if (!file) {
+      setResumeInfo(null);
+      return;
+    }
+    try {
+      const info = await api.resumeCheck(file.name, file.size);
+      setResumeInfo(info.available ? info : null);
+    } catch {
+      setResumeInfo(null); // backend unreachable: hide, don't block
+    }
+  }, []);
+
+  // When a run ends unfinished (failed/cancelled), the receiver may now hold
+  // a resumable partial of the selected file -> re-check exactly then.
+  const prevTransferStatus = useRef<TransferStatus | null>(null);
+  useEffect(() => {
+    const current = status?.transfer_status ?? null;
+    const prev = prevTransferStatus.current;
+    prevTransferStatus.current = current;
+    if (current === "transferring") {
+      setResumeInfo(null); // this run owns the partial now
+      return;
+    }
+    if ((current === "failed" || current === "cancelled") && prev !== current) {
+      void refreshResume(rawFile);
+    }
+  }, [status?.transfer_status, rawFile, refreshResume]);
+
   // ---- actions ----------------------------------------------------------
   const startServer = useCallback(
     () => runOnce(() => api.startServer()),
@@ -96,25 +130,46 @@ export function useTransfer() {
     [runOnce],
   );
 
-  const selectFile = useCallback((file: File | null) => {
-    if (!file) {
-      setSelectedFile(null);
-      setRawFile(null);
-      return;
-    }
-    setRawFile(file);
-    setSelectedFile({
-      name: file.name,
-      size: file.size,
-      packets: 0, // display computes `packets` from the live packet size
-    });
-  }, []);
+  const selectFile = useCallback(
+    (file: File | null) => {
+      if (!file) {
+        setSelectedFile(null);
+        setRawFile(null);
+        setResumeInfo(null);
+        return;
+      }
+      setRawFile(file);
+      setSelectedFile({
+        name: file.name,
+        size: file.size,
+        packets: 0, // display computes `packets` from the live packet size
+      });
+      void refreshResume(file);
+    },
+    [refreshResume],
+  );
 
+  /**
+   * Start the transfer. ``resume=true`` (default) continues an interrupted
+   * copy of the same file on the receiver; ``false`` discards it and
+   * re-sends every packet from #1.
+   */
   const startTransfer = useCallback(
-    () =>
+    (resume: boolean = true) =>
       runOnce(() => {
         if (!rawFile) throw new Error("no file selected");
-        return api.startTransfer(rawFile);
+        return api.startTransfer(rawFile, resume);
+      }),
+    [runOnce, rawFile],
+  );
+
+  /** "Start over": delete the pending partial before the next attempt. */
+  const discardResume = useCallback(
+    () =>
+      runOnce(async () => {
+        if (!rawFile) return;
+        await api.resumeDiscard(rawFile.name, rawFile.size);
+        setResumeInfo(null);
       }),
     [runOnce, rawFile],
   );
@@ -131,12 +186,14 @@ export function useTransfer() {
     error,
     busy,
     selectedFile,
+    resumeInfo,
     selectFile,
     startServer,
     stopServer,
     saveConfig,
     applyTesting,
     startTransfer,
+    discardResume,
     cancelTransfer,
   };
 }

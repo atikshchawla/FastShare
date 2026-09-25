@@ -4,7 +4,9 @@ Kept as a thin wrapper so the rest of the codebase never touches struct
 layout directly -- see protocol.py for the documented wire format.
 """
 
+from .protocol import ChecksumError
 from .protocol import build_packet as _build_packet
+from .protocol import corrupt_datagram, checksum
 from .protocol import parse_packet as _parse_packet
 from .protocol import HEADER_SIZE
 
@@ -18,11 +20,18 @@ def build_packet(seq: int, ptype: int, payload: bytes = b"") -> bytes:
 
 
 def parse_packet(data: bytes):
-    """-> (seq: int, ptype: int, payload: bytes). Raises PacketTooShort on bad input."""
+    """-> (seq: int, ptype: int, payload: bytes).
+
+    Raises ChecksumError when CRC-32 validation fails and PacketTooShort
+    on structurally malformed input.
+    """
     try:
         return _parse_packet(data)
+    except ChecksumError:
+        raise  # data corruption must stay distinguishable from bad framing
     except ValueError as exc:
         raise PacketTooShort(str(exc)) from exc
 
 
-__all__ = ["build_packet", "parse_packet", "PacketTooShort", "HEADER_SIZE"]
+__all__ = ["build_packet", "parse_packet", "PacketTooShort", "ChecksumError",
+           "corrupt_datagram", "checksum", "HEADER_SIZE"]

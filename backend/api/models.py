@@ -19,10 +19,13 @@ class ServerConfig(BaseModel):
 class TestingConfig(BaseModel):
     loss_enabled: bool = False
     loss_probability: float = Field(default=0.10, ge=0.0, le=0.90)
+    corrupt_enabled: bool = False
+    corrupt_probability: float = Field(default=0.10, ge=0.0, le=0.90)
 
 
 class TransferStartRequest(BaseModel):
     dest_filename: str | None = None
+    resume: bool = True
 
 
 class ApiResponse(BaseModel):

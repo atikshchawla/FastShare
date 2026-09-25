@@ -28,6 +28,8 @@ export interface Config {
 export interface TestingConfig {
   loss_enabled: boolean;
   loss_probability: number; // 0..1
+  corrupt_enabled: boolean;
+  corrupt_probability: number; // 0..1
 }
 
 export interface ProtocolInfo {
@@ -63,14 +65,39 @@ export interface Snapshot {
   confirmed_bytes: number;
   current_sequence: number;
   duplicate_packets: number;
+  checksum_errors: number;
   last_duplicate_seq: number | null;
   last_loss_seq: number | null;
+  last_checksum_seq: number | null;
   progress_percent: number;
   elapsed_seconds: number;
   received_path: string | null;
+  // performance statistics
+  wire_bytes: number;
+  rtt_ms: number | null;
+  rtt_min_ms: number | null;
+  rtt_max_ms: number | null;
+  srtt_ms: number | null;
+  rtt_samples: number;
+  goodput_kbps: number;
+  throughput_kbps: number;
+  loss_percent: number;
+  eta_seconds: number | null;
   checksum: string;
   resume: string;
+  resumed_from_seq: number;
+  resumed_bytes: number;
   protocol?: ProtocolInfo;
+}
+
+/** Answer of GET /api/resume/check for the currently selected file. */
+export interface ResumeInfo {
+  available: boolean;
+  resumed_seq: number;
+  received_bytes: number;
+  total_packets: number;
+  file_size: number;
+  percent: number;
 }
 
 export type PacketType = "START" | "DATA" | "END" | "ACK";
@@ -81,6 +108,7 @@ export interface PacketEntry {
   size: number;
   status: PacketStatus;
   retries: number;
+  rtt_ms?: number;
 }
 
 export interface FeedLine {

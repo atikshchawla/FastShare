@@ -10,6 +10,16 @@ Implementation plan for **FastShare — Reliable File Transfer over UDP**
 > been completed. Checksum verification, resume functionality, and transfer
 > statistics are currently in progress."
 
+**Update — all three roadmap features are now implemented** (see
+`IMPLEMENTATION_ROADMAP.md`):
+
+- Checksum verification — CRC-32 in the 13-byte wire header, enforced on
+  inbound DATA and ACKs, corruption simulator in both directions
+- Resume functionality — `.part` + `.part.meta` sidecar on the receiver,
+  START handshake negotiates the resume point, dashboard Resume / Start over
+- Transfer statistics — RTT/SRTT (EWMA), goodput, wire throughput, loss %,
+  CRC error count, ETA
+
 **Rule: correctness first.** The reliable-transfer pipeline must be demonstrable
 before any of the in-progress features are completed. Nothing unfinished is
 shown as finished in the UI.
@@ -28,7 +38,8 @@ shown as finished in the UI.
 - `udp/server.py` — bound receiver socket, per-transfer session state
 
 ### Phase 3 — Packetization & sequence numbers
-- Binary wire format (no JSON on UDP): `seq(4) | type(1) | len(4) | payload`
+- Binary wire format (no JSON on UDP): `seq(4) | type(1) | len(4) | crc32(4) | payload`
+  (9 bytes originally; +4-byte CRC-32 with the checksum feature → 13-byte header)
 - `udp/protocol.py`, `udp/packet.py` — `build_packet` / `parse_packet`
 - DATA packets carry monotonic sequence numbers `1..N`
 
@@ -107,6 +118,9 @@ shown as finished in the UI.
 - [x] Testing scenarios can be demonstrated
 - [x] README explains architecture and implementation
 - [x] No unfinished feature is falsely shown as completed
+- [x] CRC-32 checksum verification (drop corrupted packets, retransmit)
+- [x] Resume of interrupted transfers (`.part` + `.meta`, survives restart)
+- [x] Advanced statistics (RTT/SRTT, goodput, throughput, loss %, ETA)
 
 ## Not in scope yet (do not implement now)
 
@@ -116,10 +130,14 @@ analytics, mobile app.
 
 ---
 
-## Test inventory (current: 23 passing)
+## Test inventory (current: 46 passing)
 
 | File                            | Verifies                                              |
 | ------------------------------- | ----------------------------------------------------- |
-| `tests/test_packet.py`          | wire format, header size, START metadata, filename safety |
+| `tests/test_packet.py`          | wire format, 13-byte header, CRC-32, START/RESUME metadata, filename safety |
 | `tests/test_transfer.py`        | packetization, sequence numbers, ACK coverage, duplicates, end-to-end SHA-256 |
 | `tests/test_retransmission.py`  | loss → timeout/retransmit, 30%/50% loss survival, retry limit, size integrity |
+| `tests/test_checksum.py`        | corruption on DATA/ACK/START → CRC drop → retransmit, hash still matches |
+| `tests/test_stats.py`           | RTT/SRTT/goodput/throughput/loss/ETA from real transfers |
+| `tests/test_resume.py`          | cancel → resume at #K+1, restart survival, start-over, manager resume API |
+| `tests/test_api.py`             | controller JSON contract incl. testing + resume endpoints |

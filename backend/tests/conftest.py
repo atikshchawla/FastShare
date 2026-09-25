@@ -29,6 +29,8 @@ class TransferProbe:
         self.received_path = None
         self.success = None
         self.duplicates = []
+        self.checksum_errors = []
+        self.resumes = []          # [(resumed_seq, received_bytes), ...]
         self.done = threading.Event()
 
     # client callbacks
@@ -40,11 +42,18 @@ class TransferProbe:
 
     def on_finished(self, ok, detail):
         self.success = ok
+        self.detail = detail
         self.done.set()
+
+    def on_resume(self, resumed_seq, received_bytes):
+        self.resumes.append((resumed_seq, received_bytes))
 
     # server callbacks
     def on_duplicate(self, seq):
         self.duplicates.append(seq)
+
+    def on_checksum_error(self, seq):
+        self.checksum_errors.append(seq)
 
     def on_received(self, path):
         self.received_path = path
@@ -61,22 +70,48 @@ def random_file(tmp_path):
 
 
 def run_transfer(src_path, dest_name="test.bin", packet_size=1024, timeout=0.2,
-                 max_retries=3, loss=0.0, ack_loss=0.0):
-    """Run a full transfer on loopback UDP. Returns a filled TransferProbe."""
+                 max_retries=3, loss=0.0, ack_loss=0.0,
+                 corrupt=0.0, ack_corrupt=0.0,
+                 receive_dir=None, resume=True, cancel_after=None):
+    """Run a full transfer on loopback UDP. Returns a filled TransferProbe.
+
+    ``receive_dir`` reuses one directory across runs (resume scenarios);
+    ``cancel_after`` stops the sender client-side once N DATA packets have
+    been ACKed, leaving a partial file on the receiver.
+    """
     probe = TransferProbe()
     server = UDPServer(port=0, packet_size=packet_size, loss_probability=loss,
-                       receive_dir=tempfile.mkdtemp(prefix="fs_received_"),
+                       corrupt_probability=corrupt,
+                       receive_dir=receive_dir or
+                       tempfile.mkdtemp(prefix="fs_received_"),
                        on_duplicate=probe.on_duplicate,
+                       on_checksum_error=probe.on_checksum_error,
                        on_transfer_complete=probe.on_received,
                        message=probe.on_message)
     server.start()
+    holder = {}
+
+    def emit(entry):
+        probe.on_event(entry)
+        if cancel_after is not None and entry.get("type") == "DATA" \
+                and entry.get("status") == "ACKED":
+            emit.count += 1
+            if emit.count >= cancel_after:
+                holder["client"].cancel()
+    emit.count = 0
+
     client = UDPClient("127.0.0.1", server.bound_port, packet_size=packet_size,
                        timeout=timeout, max_retries=max_retries,
                        ack_loss_probability=ack_loss,
-                       emit=probe.on_event, message=probe.on_message,
-                       finished=probe.on_finished)
+                       ack_corrupt_probability=ack_corrupt,
+                       emit=emit, message=probe.on_message,
+                       finished=probe.on_finished,
+                       on_checksum_error=probe.on_checksum_error,
+                       on_resume=probe.on_resume)
+    holder["client"] = client
     thread = threading.Thread(target=client.send_file,
-                              args=(str(src_path), dest_name), daemon=True)
+                              args=(str(src_path), dest_name),
+                              kwargs={"resume": resume}, daemon=True)
     thread.start()
     assert probe.done.wait(timeout=90), "transfer did not finish"
     thread.join(timeout=5)

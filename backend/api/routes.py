@@ -14,7 +14,7 @@ from urllib.parse import unquote
 
 from transfer.manager import manager
 from udp import protocol
-from api.models import ApiResponse, ServerConfig, TestingConfig, TransferStartRequest
+from api.models import ApiResponse, ServerConfig, TestingConfig
 
 router = APIRouter(prefix="/api", tags=["controller"])
 
@@ -37,8 +37,8 @@ def get_status():
         "sequence_numbers": "Enabled",
         "acknowledgements": "Enabled",
         "retransmission": "Enabled",
-        "checksum": "Coming Soon",
-        "resume": "Coming Soon",
+"checksum": "Enabled (CRC-32)",
+        "resume": "Enabled (sidecar .meta)",
     }
     return s
 
@@ -76,8 +76,13 @@ def server_config(cfg: ServerConfig):
 @router.post("/transfer/start")
 def transfer_start(file: UploadFile = File(...),
                    dest_filename: str | None = None,
-                   opts: TransferStartRequest | None = None):
-    """Upload a file, then launch the UDP Stop-and-Wait transfer."""
+                   resume: bool = True):
+    """Upload a file, then launch the UDP Stop-and-Wait transfer.
+
+    ``resume`` is a QUERY param (multipart bodies can't carry JSON): when
+    true (default) an interrupted copy of the same file continues from
+    where it stopped; ``false`` wipes it and starts at packet 1.
+    """
     name = unquote(file.filename or "")
     base = protocol.safe_filename(name)
     dest = protocol.safe_filename(dest_filename or base or "transfer.bin")
@@ -97,7 +102,7 @@ def transfer_start(file: UploadFile = File(...),
         os.remove(upload_path)
         raise HTTPException(status_code=400, detail="selected file is empty")
 
-    result = manager.start_transfer(upload_path, base)
+    result = manager.start_transfer(upload_path, base, resume=resume)
     if not result["ok"]:
         try:
             os.remove(upload_path)
@@ -105,7 +110,7 @@ def transfer_start(file: UploadFile = File(...),
             pass
         raise HTTPException(status_code=400, detail=result["error"])
     return {"ok": True, "message": result["message"], "file_name": base,
-            "file_size": size}
+            "file_size": size, "resume": resume}
 
 
 @router.post("/transfer/cancel", response_model=ApiResponse)
@@ -128,7 +133,25 @@ def transfer_packets(limit: int = 150):
             "feed": manager.recent_feed(500)}
 
 
+# ------------------------------------------------------------------ resume
+@router.get("/resume/check")
+def resume_check(name: str, size: int):
+    """Does an interrupted copy of this exact file exist on the receiver?"""
+    return manager.resume_check(unquote(name), size)
+
+
+@router.post("/resume/discard", response_model=ApiResponse)
+def resume_discard(name: str, size: int):
+    """Delete the pending partial so the next transfer starts fresh."""
+    result = manager.resume_discard(unquote(name), size)
+    if not result["ok"]:
+        raise HTTPException(status_code=404, detail=result["error"])
+    return result
+
+
 # ------------------------------------------------------------------ testing
 @router.post("/testing/config", response_model=ApiResponse)
 def testing_config(cfg: TestingConfig):
-    return manager.apply_loss_config(cfg.loss_enabled, cfg.loss_probability)
+    return manager.apply_testing_config(
+        cfg.loss_enabled, cfg.loss_probability,
+        cfg.corrupt_enabled, cfg.corrupt_probability)

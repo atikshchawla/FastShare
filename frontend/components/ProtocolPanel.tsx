@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, Circle, Cpu } from "lucide-react";
+import { Check, Info, Cpu } from "lucide-react";
 import { Badge, Panel, PanelHeader } from "@/components/ui";
 import type { Snapshot } from "@/lib/types";
 
@@ -10,15 +10,23 @@ const IMPLEMENTED_FEATURES = [
   "Sequence Numbers",
   "ACK Mechanism",
   "Stop-and-Wait ARQ",
-  "Basic Retransmission",
+  "Retransmission on Timeout",
   "Duplicate Handling",
   "Packet Loss Simulation",
+  "CRC-32 Checksum Verification",
+  "Corruption Simulation (both directions)",
+  "Resume Interrupted Transfer (.part + .meta)",
+  "Statistics: RTT/SRTT, goodput, loss, ETA",
 ];
 
-const IN_PROGRESS_FEATURES = [
-  "Checksum Verification",
-  "Resume Transfer",
-  "Advanced Transfer Statistics",
+const PROTOCOL_PROPERTIES = [
+  "Window size = 1 (pure Stop-and-Wait)",
+  "Header: seq(4) + type(1) + len(4) + crc32(4)",
+  "CRC-32 over payload (zlib, wire + replay path)",
+  "Corrupted packets dropped without ACK",
+  "Resume point = whole packets already on disk",
+  "SRTT = EWMA(0.875, 0.125), RFC 6298 style",
+  "Goodput excludes bytes reused by resume",
 ];
 
 export function ProtocolPanel({ status }: { status: Snapshot | null }) {
@@ -39,9 +47,9 @@ export function ProtocolPanel({ status }: { status: Snapshot | null }) {
         {/* Wire Header Specification */}
         <div className="border-2 border-neutral-700 bg-neutral-950 p-3 font-mono text-xs">
           <p className="text-[10px] font-black uppercase tracking-widest text-cyan-400 mb-2">
-            FASTSHARE BINARY WIRE FORMAT (9-BYTE HEADER)
+            FASTSHARE BINARY WIRE FORMAT (13-BYTE HEADER)
           </p>
-          <div className="grid grid-cols-4 border-2 border-neutral-700 text-center font-bold">
+          <div className="grid grid-cols-2 sm:grid-cols-5 border-2 border-neutral-700 text-center font-bold">
             <div className="border-r-2 border-neutral-700 bg-neutral-900 p-2">
               <span className="block text-[10px] text-neutral-500">SEQ NUM</span>
               <span className="text-white">4 BYTES</span>
@@ -53,6 +61,10 @@ export function ProtocolPanel({ status }: { status: Snapshot | null }) {
             <div className="border-r-2 border-neutral-700 bg-neutral-900 p-2">
               <span className="block text-[10px] text-neutral-500">LENGTH</span>
               <span className="text-white">4 BYTES</span>
+            </div>
+            <div className="border-r-2 sm:border-r-2 border-neutral-700 bg-neutral-900 p-2">
+              <span className="block text-[10px] text-neutral-500">CRC-32</span>
+              <span className="text-amber-300">4 BYTES</span>
             </div>
             <div className="bg-neutral-800 p-2">
               <span className="block text-[10px] text-neutral-500">PAYLOAD</span>
@@ -79,22 +91,23 @@ export function ProtocolPanel({ status }: { status: Snapshot | null }) {
             </div>
           </div>
 
-          {/* IN PROGRESS */}
-          <div className="border-2 border-neutral-700 bg-neutral-950 p-3">
-            <p className="text-xs font-black uppercase tracking-widest text-neutral-400 mb-2 flex items-center gap-1.5">
-              <span className="inline-block h-2 w-2 bg-neutral-500" />
-              IN PROGRESS
+          {/* PROTOCOL PROPERTIES */}
+          <div className="border-2 border-cyan-500/40 bg-cyan-950/10 p-3">
+            <p className="text-xs font-black uppercase tracking-widest text-cyan-400 mb-2 flex items-center gap-1.5">
+              <Info size={13} className="shrink-0" />
+              PROTOCOL PROPERTIES
             </p>
             <div className="space-y-1.5 font-mono text-xs">
-              {IN_PROGRESS_FEATURES.map((f) => (
-                <div key={f} className="flex items-center gap-2 text-neutral-400">
-                  <Circle size={13} className="text-neutral-500 shrink-0" />
+              {PROTOCOL_PROPERTIES.map((f) => (
+                <div key={f} className="flex items-center gap-2 text-neutral-300">
+                  <span className="text-cyan-500 shrink-0">›</span>
                   <span>{f}</span>
                 </div>
               ))}
             </div>
             <p className="mt-3 border-t border-neutral-800 pt-2 text-[10px] font-mono text-neutral-500">
-              * Not active in current build. Honest academic disclosure.
+              All roadmap features (checksum · statistics · resume) are active
+              in this build.
             </p>
           </div>
         </div>

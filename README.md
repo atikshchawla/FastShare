@@ -31,6 +31,13 @@ adding:
   limit.
 - **Duplicate-packet handling** — retransmissions that "arrive twice" are
   detected and never written twice.
+- **CRC-32 checksums** — every datagram carries a CRC-32 over its payload;
+  corrupted packets are dropped without an ACK and recovered by
+  retransmission.
+- **Resume** — interrupted transfers keep a `.part` file + `.meta` sidecar
+  on the receiver and continue from the first missing packet.
+- **Statistics** — RTT/SRTT, goodput, wire throughput, loss % and ETA are
+  measured live from the packet event stream.
 - **Packet-loss simulation** — a testing/debug mode drops packets
   probabilistically so retransmission can be *demonstrated* during the viva.
 
@@ -77,15 +84,22 @@ between the browser and the controller.
 ### Custom packet format (on the wire)
 
 ```
-+-----------------+------------------+---------------+------------------+
-| Sequence Number |   Packet Type    | Payload Length|     Payload      |
-|   4 bytes       |     1 byte       |   4 bytes     |   variable       |
-+-----------------+------------------+---------------+------------------+
++-----------------+--------------+----------------+-----------+------------------+
+| Sequence Number | Packet Type  | Payload Length |  CRC-32   |     Payload      |
+|   4 bytes       |   1 byte     |   4 bytes      |  4 bytes  |    variable      |
++-----------------+--------------+----------------+-----------+------------------+
 ```
 
 Types: `START` (0), `DATA` (1), `ACK` (2), `END` (3), `ERROR` (4).
-The header is 9 bytes; the payload length is bounded so a packet always fits a
-single UDP datagram. (A checksum field is planned, not yet implemented.)
+The header is **13 bytes**: the CRC-32 is computed over the payload and
+validated on *every* inbound datagram (DATA at the receiver, ACKs at the
+sender). A corrupted packet is dropped without an ACK, so the sender's
+timeout retransmits a clean copy. The payload length is bounded so a packet
+always fits a single UDP datagram.
+
+START metadata (`START` payload) additionally carries the file name, size,
+total packets, packet size and a *resume flag*; the receiver answers with
+resume metadata in the START-ACK payload when a partial copy exists.
 
 ---
 
@@ -102,23 +116,25 @@ single UDP datagram. (A checksum field is planned, not yet implemented.)
 - Duplicate-packet handling (retransmitted data never written twice)
 - Packet-loss simulation (sender→receiver data loss **and** receiver→sender
   ACK loss) for testing/demo
+- **CRC-32 checksum verification** on the wire, plus a corruption simulator
+  for both directions (DATA at the receiver, ACKs at the sender); corrupted
+  packets are rejected with a visible `CHECKSUM MISMATCH` log and recovered
+  through the normal retransmission path
+- **Resume of interrupted transfers** — the receiver writes `<file>.part`
+  plus a `<file>.part.meta` sidecar (JSON: name, size, packet size, total
+  packets, final path); after a cancel, a crash or a full receiver restart
+  the next START for the same file negotiates a resume point and the sender
+  continues at the first missing packet. The dashboard shows a
+  *Partial transfer found* banner with **Resume** / **Start over** actions.
+- **Advanced transfer statistics** — per-packet RTT samples, current/min/max
+  and smoothed RTT (EWMA 0.875/0.125, RFC 6298 style), goodput (bytes moved
+  this session, excluding reused resume bytes), wire throughput, loss %,
+  CRC error count and ETA
 - Live dashboard: progress, packet monitor, statistics, protocol trace
-- Automated tests (23) over real loopback UDP
+- Automated tests (46) over real loopback UDP
 
-### In progress
-
-> Current academic scope: "Checksum verification, resume functionality, and
-> transfer statistics are currently in progress."
-
-- **Checksum verification** — packet layout is already structured to add it;
-  the UI honestly shows `Coming Soon`.
-- **Resume functionality** — architecture keeps a single receiver session per
-  transfer so a "last received sequence" resume point is easy to add; the UI
-  shows `Coming Soon`.
-- **Transfer statistics** — basic live counters are implemented; advanced
-  metrics (avg RTT, throughput, loss %) remain planned.
-
-No unfinished feature is presented as complete.
+No unfinished feature is presented as complete; the UI and README only
+describe what is active in the current build.
 
 ---
 
@@ -195,6 +211,20 @@ UDP tests run over real loopback sockets on an ephemeral port — no mocks.
    receiver logs `DUPLICATE` for the sequence numbers and the file hash proves
    nothing was written twice.
    (`tests/test_transfer.py::test_duplicate_packets_are_not_written_twice`)
+4. **Checksum / corruption** — bit flips are injected on inbound DATA,
+   inbound ACKs and the START handshake; asserts CRC-32 rejects them with a
+   visible `CHECKSUM MISMATCH`, retransmission recovers, and the final hash
+   still matches.
+   (`tests/test_checksum.py`, `tests/test_packet.py`)
+5. **Resume** — a transfer is cancelled mid-flight, the partial `.part` +
+   `.meta` are found by the next run, the sender continues at packet #K+1
+   (never re-sends 1..K), and the file hash matches; also covers restart
+   survival, `resume=False` start-over, the manager's
+   `/api/resume/check` and `/api/resume/discard`.
+   (`tests/test_resume.py`, `tests/test_api.py`)
+6. **Statistics** — real RTT/SRTT/goodput/throughput/loss numbers are
+   asserted against a clean and a lossy run through the controller.
+   (`tests/test_stats.py`)
 
 ---
 
@@ -208,6 +238,15 @@ UDP tests run over real loopback sockets on an ephemeral port — no mocks.
 4. **Duplicate packet** — with ACK-loss simulation, watch the trace show
    `DUPLICATE packet #N ignored (already written)` and re-ACK, proving the
    payload is not saved twice.
+5. **Checksum** — Testing → `Test 4 · 10% Corruption`, Run; watch
+   `CHECKSUM MISMATCH on packet #N ... -- dropped` (no ACK) followed by a
+   clean retransmission; Networking stats show the CRC error count, and the
+   delivered file still matches the source hash.
+6. **Resume** — start a transfer, press **Cancel** mid-flight; re-select the
+   same file. The control card shows *Partial transfer found — X% already
+   received*; press **Resume from packet #K+1** and watch the packet monitor
+   jump straight to packet #K+1 (packets 1..K are not re-sent). A receiver
+   restart in between works too: the state lives in the `.part.meta` file.
 
 ---
 
@@ -225,24 +264,25 @@ fastshare/
 │   ├── api/             routes.py + models.py (HTTP control plane)
 │   ├── udp/             packet.py, protocol.py, client.py, server.py
 │   ├── transfer/        manager.py (state, stats, packet log)
-│   └── tests/           test_packet, test_transfer, test_retransmission
+│   └── tests/           test_packet, test_transfer, test_retransmission,
+│                        test_checksum, test_stats, test_resume, test_api
 ├── transfers/           uploads/ + received/ (demo staging)
 ├── README.md
-└── PROJECT_PLAN.md
+├── PROJECT_PLAN.md
+└── IMPLEMENTATION_ROADMAP.md
 ```
 
 ---
 
 ## Future work (planned, not implemented)
 
-1. Checksum verification
-2. Resume interrupted transfers
-3. Advanced transfer statistics (avg RTT, throughput, loss %)
-4. Sliding-window ARQ (Go-Back-N / Selective Repeat)
-5. Congestion control
-6. Multiple simultaneous transfers
-7. Encryption
-8. Authentication
-9. Persistent transfer history
+1. Sliding-window ARQ (Go-Back-N / Selective Repeat)
+2. Congestion control
+3. Multiple simultaneous transfers
+4. Encryption
+5. Authentication
+6. Persistent transfer history
 
-See `PROJECT_PLAN.md` for the phase-by-phase roadmap and Definition of Done.
+See `PROJECT_PLAN.md` for the phase-by-phase roadmap and Definition of Done,
+and `IMPLEMENTATION_ROADMAP.md` for the checksum / statistics / resume plan
+that produced the current build.
