@@ -10,8 +10,6 @@ from conftest import data_status_counts, received_bytes, run_transfer
 from udp import protocol
 from udp.packet import parse_packet
 
-EXPECTED_SHA256_HASH = hashlib.sha256(b"test").hexdigest()  # sanity reference
-
 
 def test_packetization_reconstructs_original_file(random_file):
     """File -> packets -> reconstructed file must exactly match the source."""

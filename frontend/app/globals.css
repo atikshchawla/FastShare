@@ -5,13 +5,6 @@
 :root {
   --background: #0a0a0a;
   --foreground: #e5e5e5;
-  --brutal-border: #2a2a2a;
-  --brutal-shadow: 4px 4px 0px #000;
-  --brutal-shadow-sm: 2px 2px 0px #000;
-  --accent-cyan: #06b6d4;
-  --accent-green: #22c55e;
-  --accent-amber: #f59e0b;
-  --accent-red: #ef4444;
 }
 
 html,
@@ -26,11 +19,6 @@ body {
     linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px),
     linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px);
   background-size: 24px 24px;
-}
-
-/* ---- mono helpers --------------------------------------------------- */
-.font-mono-num {
-  font-variant-numeric: tabular-nums;
 }
 
 /* ---- brutalist scrollbars ------------------------------------------- */
@@ -63,46 +51,3 @@ body {
   animation: fs-pulse 1.6s ease-out infinite;
 }
 
-/* ---- packet data flow animation ------------------------------------- */
-@keyframes fs-flow-right {
-  0% { transform: translateX(-8px); opacity: 0.3; }
-  50% { opacity: 1; }
-  100% { transform: translateX(8px); opacity: 0.3; }
-}
-@keyframes fs-flow-left {
-  0% { transform: translateX(8px); opacity: 0.3; }
-  50% { opacity: 1; }
-  100% { transform: translateX(-8px); opacity: 0.3; }
-}
-.flow-data {
-  animation: fs-flow-right 1s ease-in-out infinite;
-}
-.flow-ack {
-  animation: fs-flow-left 1s ease-in-out infinite;
-}
-
-/* ---- blink for timeout/loss ----------------------------------------- */
-@keyframes fs-blink {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.3; }
-}
-.blink-warn {
-  animation: fs-blink 0.8s ease-in-out infinite;
-}
-
-/* ---- brutalist panel ------------------------------------------------ */
-.brutal-panel {
-  background: #111;
-  border: 2px solid #2a2a2a;
-  box-shadow: 4px 4px 0px #000;
-}
-.brutal-panel-sm {
-  background: #111;
-  border: 2px solid #2a2a2a;
-  box-shadow: 2px 2px 0px #000;
-}
-
-/* ---- flow active (legacy compat) ------------------------------------ */
-.flow-active {
-  animation: fs-flow-right 0.9s ease-in-out infinite;
-}

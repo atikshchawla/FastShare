@@ -7,7 +7,6 @@ an ACK, so the sender's timeout retransmits a clean copy.
 """
 
 import hashlib
-import threading
 
 from conftest import received_bytes, run_transfer
 
@@ -16,6 +15,21 @@ MSG = "CHECKSUM MISMATCH"
 
 def _sha256(b: bytes) -> str:
     return hashlib.sha256(b).hexdigest()
+
+
+def _run_until_crc_fires(src, attempts=5, **kwargs):
+    """Run the transfer until CRC-32 actually fires.
+
+    The corruption simulations are probabilistic (each datagram flips with
+    probability p), so a single run can legitimately see zero corrupted
+    packets. Retrying keeps the assertion deterministic instead of flaking.
+    """
+    for _ in range(attempts):
+        probe = run_transfer(src, **kwargs)
+        assert probe.success is True
+        if probe.checksum_errors:
+            return probe
+    raise AssertionError("CRC-32 must fire at least once under the simulation")
 
 
 def test_no_checksum_errors_without_simulation(random_file):
@@ -31,9 +45,8 @@ def test_corrupted_data_is_dropped_then_retransferred(random_file):
     """30% of inbound DATA datagrams get a bit flip -> CRC-32 drops them
     without ACK -> timeout -> retransmission -> file still byte-identical."""
     src = random_file(6 * 1024)
-    probe = run_transfer(src, corrupt=0.3, max_retries=6)
+    probe = _run_until_crc_fires(src, corrupt=0.3, max_retries=6)
 
-    assert probe.success is True, "transfer should survive simulated corruption"
     assert probe.checksum_errors, "receiver must detect corrupted packets"
     assert any(MSG in m for m in probe.messages), \
         "a CHECKSUM MISMATCH log line must be visible"
@@ -47,9 +60,8 @@ def test_corrupted_acks_trigger_retransmission_and_duplicates(random_file):
     """30% of returning ACKs get a bit flip -> the CLIENT rejects them with
     CRC-32 -> it retransmits -> the receiver logs duplicates."""
     src = random_file(6 * 1024)
-    probe = run_transfer(src, ack_corrupt=0.3, max_retries=6)
+    probe = _run_until_crc_fires(src, ack_corrupt=0.3, max_retries=6)
 
-    assert probe.success is True
     assert probe.checksum_errors, "client must detect corrupted ACKs"
     assert any("ACK" in m and MSG in m for m in probe.messages), \
         "the client should log a corrupted ACK specifically"
@@ -61,10 +73,9 @@ def test_corruption_both_directions_with_loss(random_file):
     """All three simulations at once: loss + data corruption + ack corruption.
     Stop-and-Wait must still deliver the exact bytes."""
     src = random_file(10 * 1024)
-    probe = run_transfer(src, loss=0.1, corrupt=0.2, ack_corrupt=0.2,
-                         max_retries=7)
+    probe = _run_until_crc_fires(src, loss=0.1, corrupt=0.2,
+                                 ack_corrupt=0.2, max_retries=7)
 
-    assert probe.success is True
     assert probe.checksum_errors, "corruption must be caught by CRC-32"
     assert _sha256(received_bytes(probe)) == _sha256(src.read_bytes())
 

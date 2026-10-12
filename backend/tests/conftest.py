@@ -16,8 +16,14 @@ if BACKEND_DIR not in sys.path:
 
 import pytest  # noqa: E402
 
+from transfer.manager import manager as _manager  # noqa: E402
 from udp.client import UDPClient  # noqa: E402
 from udp.server import UDPServer  # noqa: E402
+
+# Default test mode: node forwarders run in-process (fast). Tests that
+# exercise per-PC isolation opt in via the `isolated_nodes` fixture.
+_manager.config["topology_isolated"] = False
+_manager.topology._ensure_handles()
 
 
 class TransferProbe:
@@ -80,7 +86,7 @@ def run_transfer(src_path, dest_name="test.bin", packet_size=1024, timeout=0.2,
     been ACKed, leaving a partial file on the receiver.
     """
     probe = TransferProbe()
-    server = UDPServer(port=0, packet_size=packet_size, loss_probability=loss,
+    server = UDPServer(port=0, loss_probability=loss,
                        corrupt_probability=corrupt,
                        receive_dir=receive_dir or
                        tempfile.mkdtemp(prefix="fs_received_"),

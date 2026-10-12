@@ -6,9 +6,8 @@ layout directly -- see protocol.py for the documented wire format.
 
 from .protocol import ChecksumError
 from .protocol import build_packet as _build_packet
-from .protocol import corrupt_datagram, checksum
+from .protocol import corrupt_datagram
 from .protocol import parse_packet as _parse_packet
-from .protocol import HEADER_SIZE
 
 
 class PacketTooShort(ValueError):
@@ -34,4 +33,4 @@ def parse_packet(data: bytes):
 
 
 __all__ = ["build_packet", "parse_packet", "PacketTooShort", "ChecksumError",
-           "corrupt_datagram", "checksum", "HEADER_SIZE"]
+           "corrupt_datagram"]

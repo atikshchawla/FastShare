@@ -2,60 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { FlaskConical, Play, ShieldAlert, Zap } from "lucide-react";
-import { Badge, Panel, PanelHeader } from "@/components/ui";
+import { Badge, Button, Panel, PanelHeader, Select } from "@/components/ui";
 import { cn } from "@/lib/cn";
+import { SCENARIOS, type Scenario } from "@/lib/testingScenarios";
 import type { Snapshot, TestingConfig } from "@/lib/types";
-
-interface Scenario {
-  id: string;
-  label: string;
-  loss: number;
-  corrupt: number;
-  expected: string;
-  tone: "green" | "amber" | "red" | "violet";
-}
-
-const SCENARIOS: Scenario[] = [
-  {
-    id: "normal",
-    label: "Test 1 · Normal",
-    loss: 0,
-    corrupt: 0,
-    expected: "All packets ACKed · 0 retransmissions",
-    tone: "green",
-  },
-  {
-    id: "loss10",
-    label: "Test 2 · 10% Loss",
-    loss: 0.1,
-    corrupt: 0,
-    expected: "Some timeouts → retransmission → still completes",
-    tone: "amber",
-  },
-  {
-    id: "loss50",
-    label: "Test 3 · 50% Loss",
-    loss: 0.5,
-    corrupt: 0,
-    expected: "Heavy retransmission · may hit retry limit",
-    tone: "red",
-  },
-  {
-    id: "corrupt10",
-    label: "Test 4 · 10% Corruption",
-    loss: 0,
-    corrupt: 0.1,
-    expected: "CRC-32 catches bit flips → dropped → retransmit",
-    tone: "violet",
-  },
-];
-
-const TONES: Record<Scenario["tone"], "green" | "amber" | "red" | "violet"> = {
-  green: "green",
-  amber: "amber",
-  red: "red",
-  violet: "violet",
-};
 
 export function TestingPanel({
   status,
@@ -122,14 +72,14 @@ export function TestingPanel({
     sub: string,
     icon: React.ReactNode,
   ) => (
-    <div className="flex items-center gap-3 rounded-lg border border-slate-800 bg-[#070b12] px-3 py-2.5">
+    <div className="flex items-center gap-3 border-2 border-neutral-700 bg-neutral-950 px-3 py-2.5">
       <button
         role="switch"
         aria-checked={on}
         onClick={onToggle}
         className={cn(
           "relative h-5 w-10 shrink-0 rounded-full transition",
-          on ? "bg-amber-500/70" : "bg-slate-700",
+          on ? "bg-amber-500/70" : "bg-neutral-700",
         )}
       >
         <span
@@ -141,26 +91,26 @@ export function TestingPanel({
       </button>
       <span className="shrink-0 text-amber-400/80">{icon}</span>
       <div className="min-w-0">
-        <p className="text-[12px] font-semibold text-slate-200">{title}</p>
-        <p className="truncate font-mono text-[10px] text-slate-500">{sub}</p>
+        <p className="text-[12px] font-semibold text-neutral-200">{title}</p>
+        <p className="truncate font-mono text-[10px] text-neutral-500">{sub}</p>
       </div>
     </div>
   );
 
   const probSelect = (label: string, value: number, onChange: (v: number) => void) => (
-    <div className="flex items-center justify-between gap-2 rounded-lg border border-slate-800 bg-[#070b12] px-3 py-2.5">
-      <span className="text-[12px] text-slate-300">{label}</span>
-      <select
-        value={value}
+    <div className="flex items-center justify-between gap-2 border-2 border-neutral-700 bg-neutral-950 px-3 py-2.5">
+      <span className="text-[12px] text-neutral-300">{label}</span>
+      <Select
+        value={String(value)}
         onChange={(e) => onChange(Number(e.target.value))}
-        className="rounded-md border border-slate-700 bg-[#0a0f1a] px-2 py-1.5 font-mono text-[12px] text-slate-100 outline-none focus:border-amber-500/60"
+        className="w-20"
       >
         {[0, 0.05, 0.1, 0.25, 0.5].map((p) => (
           <option key={p} value={p}>
             {Math.round(p * 100)}%
           </option>
         ))}
-      </select>
+      </Select>
     </div>
   );
 
@@ -183,8 +133,8 @@ export function TestingPanel({
         }
       />
 
-      <div className="p-4">
-        <div className="grid grid-cols-2 gap-3">
+      <div className="p-3">
+        <div className="grid grid-cols-2 gap-2">
           {simToggle(
             lossOn,
             () => setLossOn((e) => !e),
@@ -209,34 +159,37 @@ export function TestingPanel({
               key={s.id}
               onClick={() => pick(s)}
               className={cn(
-                "flex w-full items-center justify-between gap-2 rounded-lg border px-3 py-2 text-left transition",
+                "flex w-full items-center justify-between gap-2 border-2 px-3 py-2 text-left transition",
                 active === s.id
                   ? "border-cyan-500/60 bg-cyan-500/[0.07]"
-                  : "border-slate-800 bg-[#070b12] hover:border-slate-600",
+                  : "border-neutral-700 bg-neutral-950 hover:border-neutral-500",
               )}
             >
-              <span className="flex items-center gap-2 text-[12px] font-semibold text-slate-200">
-                <Badge tone={TONES[s.tone]} className="font-mono text-[9px]">
+              <span className="flex items-center gap-2 text-[12px] font-semibold text-neutral-200">
+                <Badge tone={s.tone} className="font-mono text-[9px]">
                   {s.tone === "violet" ? "CRC" : s.tone === "green" ? "OK" : s.tone === "amber" ? "ARQ" : "MAX"}
                 </Badge>
                 {s.label}
               </span>
-              <span className="truncate text-right text-[11px] text-slate-500">
+              <span className="truncate text-right text-[11px] text-neutral-500">
                 {s.expected}
               </span>
             </button>
           ))}
         </div>
 
-        <div className="mt-3 flex items-center gap-2">
-          <button
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <Button
+            variant="ghost"
+            size="sm"
             onClick={() => onApply(cfg())}
             disabled={busy}
-            className="rounded-md border border-slate-700 bg-slate-800/60 px-3 py-2 text-[12px] font-semibold text-slate-200 transition hover:bg-slate-700/60 disabled:opacity-50"
           >
             Apply
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="success"
+            size="sm"
             onClick={() => onRunTest(cfg())}
             disabled={busy || !hasFile || !serverRunning || transferring}
             title={
@@ -246,15 +199,10 @@ export function TestingPanel({
                   ? "select a file first"
                   : "apply the selected faults, then start"
             }
-            className={cn(
-              "inline-flex items-center gap-1.5 rounded-md border border-emerald-500/50",
-              "bg-emerald-500/15 px-3 py-2 text-[12px] font-semibold text-emerald-300",
-              "transition hover:bg-emerald-500/25 disabled:cursor-not-allowed disabled:opacity-40",
-            )}
           >
             <Play size={13} /> Run Test
-          </button>
-          <span className="ml-auto text-right text-[10px] leading-tight text-slate-600">
+          </Button>
+          <span className="ml-auto text-right text-[10px] leading-tight text-neutral-600">
             Simulations run inside Python on real UDP packets
           </span>
         </div>

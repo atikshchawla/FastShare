@@ -1,5 +1,7 @@
 /** Shared types mirroring the FastAPI controller responses. */
 
+import type { SchedulerState } from "./topology";
+
 export type ServerStatus = "stopped" | "running" | "error";
 export type TransferStatus =
   | "idle"
@@ -23,6 +25,8 @@ export interface Config {
   timeout_ms: number;
   window_size: number;
   max_retries: number;
+  topology_enabled: boolean;
+  topology_latency_ms: number;
 }
 
 export interface TestingConfig {
@@ -32,19 +36,7 @@ export interface TestingConfig {
   corrupt_probability: number; // 0..1
 }
 
-export interface ProtocolInfo {
-  transport: string;
-  reliability: string;
-  packet_size: number;
-  sequence_numbers: string;
-  acknowledgements: string;
-  retransmission: string;
-  checksum: string;
-  resume: string;
-}
-
-export type StatusResponse = Snapshot & { protocol: ProtocolInfo };
-
+/** State snapshot returned by GET /api/status and GET /api/transfer/status. */
 export interface Snapshot {
   server_status: ServerStatus;
   server_error: string | null;
@@ -54,22 +46,18 @@ export interface Snapshot {
   testing: TestingConfig;
   transfer_status: TransferStatus;
   transfer_error: string | null;
-  file_name: string | null;
   file_size: number;
   total_packets: number;
   packets_sent: number;
   packets_acked: number;
   packets_lost: number;
   retransmissions: number;
-  bytes_sent: number;
   confirmed_bytes: number;
   current_sequence: number;
   duplicate_packets: number;
   checksum_errors: number;
   last_duplicate_seq: number | null;
   last_loss_seq: number | null;
-  last_checksum_seq: number | null;
-  progress_percent: number;
   elapsed_seconds: number;
   received_path: string | null;
   // performance statistics
@@ -83,11 +71,10 @@ export interface Snapshot {
   throughput_kbps: number;
   loss_percent: number;
   eta_seconds: number | null;
-  checksum: string;
-  resume: string;
   resumed_from_seq: number;
   resumed_bytes: number;
-  protocol?: ProtocolInfo;
+  // source-side multipath scheduler (null before the first transfer)
+  scheduler: SchedulerState | null;
 }
 
 /** Answer of GET /api/resume/check for the currently selected file. */
@@ -108,7 +95,10 @@ export interface PacketEntry {
   size: number;
   status: PacketStatus;
   retries: number;
+  /** RTT of the ACK that closed this entry (ACKED only). */
   rtt_ms?: number;
+  /** Multipath lane index that carried the send (absent when single-path). */
+  lane?: number;
 }
 
 export interface FeedLine {
@@ -124,26 +114,10 @@ export interface PacketResponse {
 export interface SelectedFile {
   name: string;
   size: number;
-  packets: number;
 }
 
 export interface ApiOk {
   ok: boolean;
   message?: string | null;
   error?: string | null;
-}
-
-export function formatBytes(n: number): string {
-  if (n <= 0) return "0 B";
-  const units = ["B", "KB", "MB", "GB"];
-  const i = Math.min(units.length - 1, Math.floor(Math.log(n) / Math.log(1024)));
-  const v = n / Math.pow(1024, i);
-  return `${v.toFixed(v >= 100 || i === 0 ? 0 : 1)} ${units[i]}`;
-}
-
-export function formatSeconds(s: number): string {
-  if (s < 0) s = 0;
-  const m = Math.floor(s / 60);
-  const sec = Math.floor(s % 60);
-  return `${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
 }

@@ -15,7 +15,6 @@ if the sender retransmits a packet whose payload was already written,
 the receiver sends the ACK again but MUST NOT write the data twice.
 """
 
-import json
 import os
 import random
 import socket
@@ -24,85 +23,19 @@ import time
 
 from . import protocol
 from .packet import ChecksumError, corrupt_datagram, parse_packet
-
-
-# ---------------------------------------------------------------------------
-# Resume helpers (shared with the controller so /api/resume/check can inspect
-# the receive directory without a running server).
-# ---------------------------------------------------------------------------
-def find_partial(receive_dir, name, size, packet_size=None):
-    """Locate an interrupted transfer's partial file for this exact file.
-
-    A match requires the sidecar .meta JSON (written at START) to describe
-    the same name/size, and -- when ``packet_size`` is given -- the same
-    packet size (resume math depends on it). Returns a dict or None.
-    """
-    try:
-        entries = sorted(os.listdir(receive_dir))
-    except OSError:
-        return None
-    for fn in entries:
-        if not fn.endswith(".part"):
-            continue
-        part_path = os.path.join(receive_dir, fn)
-        meta_path = part_path + ".meta"
-        try:
-            with open(meta_path, encoding="utf-8") as fh:
-                meta = json.load(fh)
-            received = os.path.getsize(part_path)
-        except (OSError, ValueError):
-            continue
-        if meta.get("name") != name or meta.get("size") != size:
-            continue
-        if packet_size is not None and meta.get("packet_size") != packet_size:
-            continue
-        return {"part_path": part_path, "meta_path": meta_path,
-                "meta": meta, "received": received}
-    return None
-
-
-def resume_point(received, size, packet_size, total_packets):
-    """Where a resume should continue, given bytes already on disk.
-
-    Stop-and-Wait only ever writes whole packets, so the resume point is
-    received // packet_size. Returns (resumed_seq, aligned_bytes):
-      - received >= size  -> (total_packets, size): everything is there,
-        the sender only needs to re-send END.
-      - sub-packet tail   -> (0, 0): unusable, caller should start fresh.
-    """
-    if received <= 0 or packet_size <= 0:
-        return 0, 0
-    if received >= size:
-        return total_packets, size
-    full = received // packet_size
-    return full, full * packet_size
-
-
-def discard_partial(candidate):
-    """Delete a partial file + its sidecar meta (used by 'start over')."""
-    for path in (candidate["part_path"], candidate["meta_path"]):
-        try:
-            os.remove(path)
-        except OSError:
-            pass
-
-
-def _write_meta(part_path, meta):
-    with open(part_path + ".meta", "w", encoding="utf-8") as fh:
-        json.dump(meta, fh)
+# .part/.meta helpers are shared with the controller (transfer/manager.py)
+from .resume_fs import discard_partial, find_partial, resume_point, write_meta
 
 
 class UDPServer:
     """Reliable file receiver over UDP. One transfer at a time."""
 
-    def __init__(self, port, packet_size=protocol.DEFAULT_PACKET_SIZE,
-                 loss_probability=0.0,
+    def __init__(self, port, loss_probability=0.0,
                  corrupt_probability=0.0,
                  receive_dir=None,
                  on_duplicate=None, on_checksum_error=None,
                  on_transfer_complete=None, message=None):
         self.port = port
-        self.packet_size = packet_size
         # Testing/debug hook: probability [0..1] of "dropping" an incoming
         # packet in the simulated network. Dropped packets get no ACK, so the
         # sender times out and retransmits.
@@ -198,7 +131,7 @@ class UDPServer:
             except ValueError:
                 continue
             self._handle(seq, ptype, payload, addr)
-        self._reset_session()
+        self.reset_session()
         self.message("Server stopped")
 
     # ------------------------------------------------------------------
@@ -220,7 +153,6 @@ class UDPServer:
                 if seq == exp:
                     # Expected sequence number: first time we see it.
                     session["out"].write(payload)
-                    session["written"] += len(payload)
                     session["expected_seq"] = exp + 1
                     self._send_ack(seq, addr)
                     if session.get("verbose", False):
@@ -248,7 +180,7 @@ class UDPServer:
                 self.message(f"SERVER <- END packet received, sending final ACK #{seq}")
                 self._finalize(session)
                 self._send_ack(seq, addr)
-                self._reset_session()
+                self.reset_session()
             return
 
     # ------------------------------------------------------------------
@@ -274,7 +206,7 @@ class UDPServer:
 
             # Close any previous session handle; its files stay on disk so an
             # interrupted transfer can still be resumed later.
-            self._reset_session()
+            self.reset_session()
 
             # Is there an interrupted copy of THIS file waiting to resume?
             if resume_ok:
@@ -300,7 +232,7 @@ class UDPServer:
                 final_path = candidate["meta"].get("final_path") or part_path[:-5]
                 if candidate["received"] != aligned:
                     os.truncate(part_path, aligned)  # drop a torn tail
-                mode, expected, written = "ab", resumed_seq + 1, aligned
+                mode, expected = "ab", resumed_seq + 1
                 resume_payload = protocol.build_resume_meta(resumed_seq, aligned)
                 self.message(
                     f"RESUME: {aligned}B already on disk "
@@ -312,11 +244,11 @@ class UDPServer:
                 final_path = os.path.join(self.receive_dir, f"{run_id}_{base}")
                 part_path = final_path + ".part"
                 os.makedirs(os.path.dirname(final_path), exist_ok=True)
-                _write_meta(part_path, {
+                write_meta(part_path, {
                     "name": name, "size": size, "packet_size": pk_size,
                     "total_packets": total, "final_path": final_path,
                 })
-                mode, expected, written, resumed_seq = "wb", 1, 0, 0
+                mode, expected, resumed_seq = "wb", 1, 0
                 resume_payload = b""
                 self.message(f"Transfer started: {name} ({size} bytes, "
                              f"{total} packets, {pk_size}B)")
@@ -327,13 +259,10 @@ class UDPServer:
                 "part_path": part_path,
                 "size": size,
                 "total_packets": total,
-                "packet_size": pk_size,
                 "start_seq": expected,       # duplicate-START guard reference
                 "expected_seq": expected,
                 "resume_payload": resume_payload,
                 "out": open(part_path, mode),
-                "addr": addr,
-                "written": written,
                 "verbose": (total <= 500),
             }
             self._send_ack(protocol.SEQ_START, addr, resume_payload)
@@ -350,7 +279,7 @@ class UDPServer:
         self.message(f"Transfer complete -> {session['final_path']}")
         self.on_transfer_complete(session["final_path"])
 
-    def _reset_session(self):
+    def reset_session(self):
         """Close the active session's file handle.
 
         The partial file and its .meta sidecar are intentionally KEPT: they

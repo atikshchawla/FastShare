@@ -36,10 +36,15 @@ export function TransferConfigCard({
     setForm((f) => ({ ...f, [key]: value }) as Config);
   };
 
-  const setNum = (key: Exclude<keyof Config, "server_ip">, value: string) => {
+  const setNum = (key: Exclude<keyof Config, "server_ip" | "topology_enabled">, value: string) => {
     touch();
     const cleaned = value.replace(/\D/g, "");
     setForm((f) => ({ ...f, [key]: cleaned }) as Config);
+  };
+
+  const setBool = (key: "topology_enabled", value: boolean) => {
+    touch();
+    setForm((f) => ({ ...f, [key]: value }));
   };
 
   const validate = (): string | null => {
@@ -55,6 +60,9 @@ export function TransferConfigCard({
     const retries = Number(form.max_retries);
     if (!Number.isInteger(retries) || retries < 1 || retries > 20)
       return "Max retries must be 1–20.";
+    const latency = Number(form.topology_latency_ms);
+    if (!Number.isInteger(latency) || latency < 1 || latency > 1000)
+      return "Hop latency must be 1–1000 ms.";
     return null;
   };
 
@@ -72,6 +80,8 @@ export function TransferConfigCard({
       timeout_ms: Number(form.timeout_ms),
       window_size: 1,
       max_retries: Number(form.max_retries),
+      topology_enabled: form.topology_enabled === true,
+      topology_latency_ms: Number(form.topology_latency_ms),
     });
     if (ok) {
       setDirty(false);
@@ -100,9 +110,9 @@ export function TransferConfigCard({
         }
       />
 
-      <div className="p-4">
-        {/* Compact Grid */}
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 font-mono text-xs">
+      <div className="p-3">
+        {/* Compact Grid (container-query aware via @container on the panel) */}
+        <div className="grid grid-cols-2 gap-2 @md:grid-cols-3 font-mono text-xs">
           <div className="border-2 border-neutral-700 bg-neutral-950 p-2">
             <span className="block text-[10px] font-bold text-neutral-500 uppercase">Server IP</span>
             <input
@@ -160,7 +170,41 @@ export function TransferConfigCard({
               1 (Locked)
             </div>
           </div>
+
+          <div className="border-2 border-neutral-700 bg-neutral-950 p-2">
+            <span className="block text-[10px] font-bold text-neutral-500 uppercase">Multi-Server Topology</span>
+            <button
+              onClick={() => setBool("topology_enabled", !form.topology_enabled)}
+              className={`mt-1 w-full border-2 px-2 py-1 font-mono text-xs font-bold uppercase cursor-pointer ${
+                form.topology_enabled
+                  ? "border-green-500 bg-green-500/20 text-green-300"
+                  : "border-neutral-700 bg-neutral-900 text-neutral-400"
+              }`}
+            >
+              {form.topology_enabled ? "ON — 7 NODES" : "OFF"}
+            </button>
+          </div>
+
+          <div className={`border-2 border-neutral-700 bg-neutral-950 p-2 ${form.topology_enabled ? "" : "opacity-60"}`}>
+            <span className="block text-[10px] font-bold text-neutral-500 uppercase">Hop Latency</span>
+            <div className="mt-1 flex items-center bg-neutral-900 border border-neutral-700 px-2 py-1">
+              <input
+                value={form.topology_latency_ms}
+                disabled={!form.topology_enabled}
+                onChange={(e) => setNum("topology_latency_ms", e.target.value)}
+                className="w-full bg-transparent text-xs font-bold text-white outline-none disabled:opacity-50"
+              />
+              <span className="text-[10px] text-neutral-500">ms</span>
+            </div>
+          </div>
         </div>
+
+        {form.topology_enabled && (
+          <div className="mt-3 border-2 border-cyan-500/40 bg-cyan-500/5 p-2 font-mono text-[10px] font-bold uppercase text-cyan-300">
+            Topology active — receiver rebinds to the destination node and the
+            6 forwarders start with the next server start or transfer.
+          </div>
+        )}
 
         {error && (
           <div className="mt-3 border-2 border-red-500 bg-red-500/10 p-2 font-mono text-[11px] font-bold text-red-400">

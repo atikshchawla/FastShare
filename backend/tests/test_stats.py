@@ -76,7 +76,7 @@ def test_lossy_transfer_reports_nonzero_loss_and_rtt(stats_env):
     src = stats_env / "lossy_src.bin"
     src.write_bytes(os.urandom(6 * 1024))
     assert manager.start_transfer(str(src), "lossy_src.bin")["ok"] is True
-    assert _wait_finished() == "completed"
+    assert _wait_finished() == "completed", manager.transfer_error
 
     snap = manager.status_snapshot()
     assert snap["retransmissions"] > 0

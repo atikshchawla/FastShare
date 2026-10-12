@@ -1,13 +1,16 @@
 """TransferManager: the single source of truth the API reads.
 
-Holds:
-- controller configuration (server IP/port, packet size, timeout, window)
-- the UDP server lifecycle (start/stop, packet-loss simulation)
-- the active transfer lifecycle (client thread, state, statistics)
-- the packet activity log that feeds the live UI packet monitor
+Responsibilities are deliberately thin -- the math, the bounded event log
+and the on-disk resume store live in their own modules:
+    transfer/constants.py   status values + size limits
+    transfer/stats.py       RttSampler + derive_metrics (pure math)
+    transfer/event_log.py   bounded feed + per-packet table
+    udp/resume_fs.py        .part/.meta store (shared with the receiver)
 
-Nothing network-specific lives here; the manager merely wires the
-UDP client/server to shared state and exposes thread-safe snapshots.
+What stays here: controller configuration, UDP server lifecycle, the
+transfer lifecycle (client thread, state machine, cancel/resume), event
+ingestion (every counter derives from emit_packet) and the thread-safe
+status_snapshot() the HTTP layer serialises.
 """
 
 import math
@@ -16,23 +19,21 @@ import threading
 import time
 
 from udp import protocol
-from udp.client import UDPClient, STATUS_ACKED, STATUS_FAILED
-from udp.server import UDPServer, discard_partial, find_partial, resume_point
+from udp.client import STATUS_ACKED, STATUS_FAILED, UDPClient
+from udp.resume_fs import discard_partial, find_partial, resume_point
+from udp.server import UDPServer
 
-# transfer_status values
-TS_IDLE = "idle"
-TS_TRANSFERRING = "transferring"
-TS_COMPLETED = "completed"
-TS_FAILED = "failed"
-TS_CANCELLED = "cancelled"
+from .constants import (SS_ERROR, SS_RUNNING, SS_STOPPED, TS_CANCELLED,
+                        TS_COMPLETED, TS_FAILED, TS_IDLE, TS_TRANSFERRING)
+from .event_log import EventLog
+from .stats import RttSampler, derive_metrics
+from .topology import TopologyManager
 
-# server_status values
-SS_STOPPED = "stopped"
-SS_RUNNING = "running"
-SS_ERROR = "error"
-
-MAX_FEED = 3000      # max event feed lines kept
-MAX_LOG_ENTRIES = 4000  # cap packet log size (UI asks for a window anyway)
+__all__ = [
+    "TransferManager", "manager",
+    "TS_IDLE", "TS_TRANSFERRING", "TS_COMPLETED", "TS_FAILED", "TS_CANCELLED",
+    "SS_STOPPED", "SS_RUNNING", "SS_ERROR",
+]
 
 
 class TransferManager:
@@ -46,6 +47,12 @@ class TransferManager:
             "timeout_ms": 500,
             "window_size": 1,          # Stop-and-Wait (sliding window later)
             "max_retries": 5,
+            # multi-server topology (FEATURE_SPEC_MULTI_SERVER_TOPOLOGY.md)
+            "topology_enabled": False,
+            "topology_latency_ms": 10,
+            # per-PC isolation: every node runs in its own OS process with
+            # per-node logs (tests flip this off for in-process speed)
+            "topology_isolated": True,
         }
         self.testing = {
             "loss_enabled": False,
@@ -77,13 +84,8 @@ class TransferManager:
         self.last_duplicate_seq = None
         self.last_loss_seq = None
         self.last_checksum_seq = None
-        # wire + timing statistics
         self.wire_bytes = 0            # every byte the sender put on the wire
-        self.rtt_current = None        # latest RTT sample (ms)
-        self.rtt_min = None
-        self.rtt_max = None
-        self.srtt = None               # RFC 6298 EWMA (0.875/0.125)
-        self.rtt_samples = 0
+        self.rtt = RttSampler()        # current/min/max/srtt (see stats.py)
         # resume state
         self.resumed_from_seq = 0      # first packet re-sent this session
         self.resumed_bytes = 0         # ... and how many bytes were reused
@@ -91,22 +93,16 @@ class TransferManager:
         self.finished_at = None
         self.elapsed_seconds = 0.0
         self.received_path = None
-        self.upload_path = None
-        # packet log: keyed by seq -> last entry; list maintains order
-        self._packet_order = []
-        self.packets = dict()
-        self.feed = []          # human readable event feed for the UI
+        self.events = EventLog()       # feed + packet table for the UI
         self._cancel_requested = False
+        # preset node graph + forwarder lifecycle (topology/manager.py)
+        self.topology = TopologyManager(self)
 
-        self._finalize_callback = lambda: None
-
-    # ================================================================== util
+    # ================================================================== events
     def _log(self, text):
-        entry = {"t": time.time(), "text": text}
+        """Human-readable feed line (also the UDP client/server message sink)."""
         with self._lock:
-            self.feed.append(entry)
-            if len(self.feed) > MAX_FEED:
-                self.feed = self.feed[-MAX_FEED:]
+            self.events.log(text)
 
     def emit_packet(self, entry):
         """Record a packet activity event coming from the UDP client/server.
@@ -117,20 +113,11 @@ class TransferManager:
           RETRANSMITTED  -> retransmissions += 1, wire bytes += packet size
           TIMEOUT        -> packets_lost += 1
           ACKED (DATA)   -> packets_acked += 1, confirmed bytes += size,
-                            RTT sample -> current/min/max/SRTT
+                            RTT sample -> RttSampler
           FAILED         -> mark the failed sequence
         """
         with self._lock:
-            key = entry["seq"]
-            prev = self.packets.get(key)
-            if entry["type"] in ("START", "DATA", "END"):
-                self.packets[key] = entry
-                if prev is None:
-                    self._packet_order.append(key)
-                if len(self._packet_order) > MAX_LOG_ENTRIES:
-                    drop = self._packet_order.pop(0)
-                    self.packets.pop(drop, None)
-
+            prev = self.events.record(entry)
             status = entry["status"]
             entry_size = entry.get("size", 0)
             if status == "SENT":
@@ -152,39 +139,31 @@ class TransferManager:
                     self.current_sequence = entry["seq"]
                 rtt = entry.get("rtt_ms")
                 if rtt is not None and rtt >= 0:
-                    self._record_rtt(rtt)
+                    self.rtt.record(rtt)
             elif status == STATUS_FAILED:
                 if entry["seq"] > self.current_sequence:
                     self.current_sequence = entry["seq"]
-
-    def _record_rtt(self, rtt_ms):
-        """Update current/min/max and the RFC 6298 smoothed RTT."""
-        self.rtt_current = rtt_ms
-        self.rtt_min = rtt_ms if self.rtt_min is None else min(self.rtt_min, rtt_ms)
-        self.rtt_max = rtt_ms if self.rtt_max is None else max(self.rtt_max, rtt_ms)
-        if self.srtt is None:
-            self.srtt = rtt_ms
-        else:
-            self.srtt = 0.875 * self.srtt + 0.125 * rtt_ms
-        self.rtt_samples += 1
 
     # ================================================================== server
     def start_server(self):
         with self._lock:
             if self.server_status == SS_RUNNING:
                 return {"ok": True, "message": "server already running"}
+            topology_on = self.topology.enabled
             try:
                 port = int(self.config["udp_port"])
-                packet_size = int(self.config["packet_size"])
             except (TypeError, ValueError):
-                return {"ok": False, "error": "invalid server port or packet size"}
+                return {"ok": False, "error": "invalid server port"}
+            if topology_on:
+                # the receiver parks on the destination node (default hub);
+                # start_transfer re-binds it when the pick changes
+                port = self.topology.dest_port()
 
             loss_p = self.testing["loss_probability"] if self.testing["loss_enabled"] else 0.0
             corrupt_p = self.testing["corrupt_probability"] \
                 if self.testing["corrupt_enabled"] else 0.0
             server = UDPServer(
                 port=port,
-                packet_size=packet_size,
                 loss_probability=loss_p,
                 corrupt_probability=corrupt_p,
                 receive_dir=self._received_dir(),
@@ -203,17 +182,32 @@ class TransferManager:
             self.server_status = SS_RUNNING
             self.server_error = None
             self._log(f"UDP server started on port {port}")
+            if topology_on:
+                # forwarders on every node except the receiver's; a bind
+                # failure only warns here (prepare_transfer self-heals and
+                # fails loudly with context when the route really needs it)
+                failed = self.topology.start_all(exclude_port=server.bound_port)
+                for node_id in failed:
+                    self._log(f"WARNING: topology node '{node_id}' could not "
+                              f"bind its port")
+                if not failed:
+                    hops = len(self.topology.topology.nodes) - 1
+                    self._log(f"Topology online: {hops} forwarders + receiver "
+                              f"on {self.topology.dest_id} ({port})")
             return {"ok": True, "message": "server started"}
 
     def stop_server(self):
         # Never call into the server while holding the manager lock: the
         # server thread may itself want the manager lock for its callbacks
         # (message/duplicate/complete) -> that ordering deadlocks.
+        # Forwarders never call back, so stopping them inside is safe.
         with self._lock:
             server = self.server
             self.server = None
             self.server_status = SS_STOPPED
             self.server_error = None
+            self.topology.stop_all()
+            self.topology.clear_route()
         if server:
             server.stop()   # partial files survive: they power resume
         with self._lock:
@@ -255,6 +249,7 @@ class TransferManager:
             if self.client:
                 self.client.ack_loss_probability = loss_p
                 self.client.ack_corrupt_probability = corrupt_p
+            self.topology.patch_testing(loss_p, corrupt_p)
             self._log(
                 f"Packet loss simulation {'ON' if loss_enabled else 'OFF'}"
                 f" ({int(loss_p * 100)}%) | "
@@ -262,20 +257,21 @@ class TransferManager:
                 f" ({int(corrupt_p * 100)}%)")
             return {"ok": True}
 
-    # kept for compatibility with older callers/tests
-    def apply_loss_config(self, enabled, probability):
-        return self.apply_testing_config(enabled, probability,
-                                         self.testing["corrupt_enabled"],
-                                         self.testing["corrupt_probability"])
-
     # ================================================================== transfer
-    def start_transfer(self, upload_path, file_name, callback=None, resume=True):
+    def start_transfer(self, upload_path, file_name, resume=True,
+                       source=None, dest=None):
         """Kick off a Stop-and-Wait transfer in a background thread.
 
         ``resume=True`` lets the START handshake continue an interrupted
         transfer's partial file; ``resume=False`` discards it and starts at
         packet 1. The server decides at handshake time, so no session reset
         happens here (the leftover partial must stay visible to START).
+
+        With ``config["topology_enabled"]``, ``source``/``dest`` pick preset
+        nodes (defaults: l1 -> hub): the receiver is re-bound to the
+        destination node's port, the interior forwarders get their route,
+        and the client targets ``route[1]`` — the source node's identity IS
+        the client socket (spec §3). Ignored while the flag is off.
         """
         with self._lock:
             if self.transfer_status == TS_TRANSFERRING:
@@ -284,25 +280,52 @@ class TransferManager:
                 return {"ok": False,
                         "error": "UDP server is not running -- start the "
                                  "receiver first"}
+            server = self.server
+            topology_on = bool(self.config.get("topology_enabled"))
+
+        # Topology preparation re-binds the receiver, so it must happen
+        # OUTSIDE the manager lock (the receiver thread logs through us).
+        route = None
+        target_port = None
+        lanes = None
+        if topology_on:
+            prep = self.topology.prepare_transfer(server, source, dest)
+            if not prep["ok"]:
+                return {"ok": False, "error": prep["error"]}
+            route = prep["route"]
+            target_port = prep["target_port"]
+            lanes = prep.get("lanes")
+
+        with self._lock:
+            # re-check: the topology prep above yielded the lock
+            if self.transfer_status == TS_TRANSFERRING:
+                return {"ok": False, "error": "a transfer is already running"}
+            if self.server_status != SS_RUNNING or self.server is None:
+                return {"ok": False,
+                        "error": "UDP server is not running -- start the "
+                                 "receiver first"}
+            if target_port is None:
+                target_port = int(self.config["udp_port"])
             self._reset_transfer_state()
             self.file_name = file_name
-            self.upload_path = upload_path
             self.file_size = os.path.getsize(upload_path)
             self.total_packets = math.ceil(self.file_size / int(self.config["packet_size"]))
             self.transfer_status = TS_TRANSFERRING
             self._cancel_requested = False
             self.started_at = time.time()
             self._log(f"Starting transfer of '{file_name}' -> "
-                      f"{self.config['server_ip']}:{self.config['udp_port']}"
+                      f"{self.config['server_ip']}:{target_port}"
                       f"{' (resume allowed)' if resume else ' (fresh)'}")
-            self._finalize_callback = callback or (lambda *_: None)
+            if route:
+                self._log(f"Route: {' -> '.join(route)} "
+                          f"({len(route) - 1} hops)")
 
             loss_p = self.testing["loss_probability"] if self.testing["loss_enabled"] else 0.0
             corrupt_p = self.testing["corrupt_probability"] \
                 if self.testing["corrupt_enabled"] else 0.0
             client = UDPClient(
                 host=self.config["server_ip"],
-                port=int(self.config["udp_port"]),
+                port=target_port,
                 packet_size=int(self.config["packet_size"]),
                 timeout=max(0.05, int(self.config["timeout_ms"]) / 1000.0),
                 max_retries=int(self.config["max_retries"]),
@@ -313,6 +336,8 @@ class TransferManager:
                 finished=self._on_transfer_finished,
                 on_checksum_error=self._on_checksum_error,
                 on_resume=self._on_resume,
+                lanes=lanes,
+                multipath=self.topology.multipath,
             )
             self.client = client
             threading.Thread(
@@ -327,7 +352,6 @@ class TransferManager:
         except Exception as exc:  # noqa: BLE001 - report any failure
             self._log(f"transfer crashed: {exc}")
             self._set_transfer_state(TS_FAILED, str(exc))
-            self._finalize_callback()
         finally:
             client.close()
 
@@ -369,7 +393,6 @@ class TransferManager:
             else:
                 self.transfer_status = TS_FAILED
                 self.transfer_error = detail
-        self._finalize_callback()
 
     def cancel_transfer(self):
         # Client/server calls happen outside the manager lock (same deadlock
@@ -385,7 +408,7 @@ class TransferManager:
         if server:
             # Close the handle so the bytes flush; the partial file + meta
             # are kept on disk so the transfer can be resumed afterwards.
-            server._reset_session()
+            server.reset_session()
         return {"ok": True, "message": "cancelling..."}
 
     def _reset_transfer_state(self):
@@ -407,21 +430,14 @@ class TransferManager:
         self.last_loss_seq = None
         self.last_checksum_seq = None
         self.wire_bytes = 0
-        self.rtt_current = None
-        self.rtt_min = None
-        self.rtt_max = None
-        self.srtt = None
-        self.rtt_samples = 0
+        self.rtt.reset()
         self.resumed_from_seq = 0
         self.resumed_bytes = 0
         self.started_at = None
         self.finished_at = None
         self.elapsed_seconds = 0.0
         self.received_path = None
-        self.upload_path = None
-        self._packet_order = []
-        self.packets = dict()
-        self.feed = []
+        self.events.reset()
         self._cancel_requested = False
 
     def _set_transfer_state(self, status, error=None):
@@ -436,32 +452,26 @@ class TransferManager:
             if self.transfer_status == TS_TRANSFERRING and self.started_at:
                 self.elapsed_seconds = time.time() - self.started_at
 
-            total = max(self.total_packets, 1)
-            progress = round(min(100.0, (self.packets_acked / total) * 100), 1)
-
-            # ---- derived performance metrics ------------------------------
-            # goodput/ETA measure bytes actually moved THIS session, so a
-            # resumed run (reused bytes counted in confirmed_bytes) doesn't
-            # fake an instant transfer rate.
-            session_bytes = max(0, self.confirmed_bytes - self.resumed_bytes)
-            elapsed = self.elapsed_seconds
-            if elapsed > 0 and session_bytes > 0:
-                goodput_bps = session_bytes / elapsed
-                eta = max(0.0, self.file_size - self.confirmed_bytes) / goodput_bps
-            else:
-                goodput_bps = 0.0
-                eta = None
-            if self.transfer_status == TS_COMPLETED:
-                eta = 0.0
-            throughput_bps = (self.wire_bytes / elapsed) if elapsed > 0 else 0.0
-            loss_percent = (self.retransmissions / max(self.packets_sent, 1)) * 100.0
+            metrics = derive_metrics(
+                elapsed_seconds=self.elapsed_seconds,
+                confirmed_bytes=self.confirmed_bytes,
+                resumed_bytes=self.resumed_bytes,
+                file_size=self.file_size,
+                wire_bytes=self.wire_bytes,
+                packets_sent=self.packets_sent,
+                retransmissions=self.retransmissions,
+                total_packets=self.total_packets,
+                packets_acked=self.packets_acked,
+                is_completed=self.transfer_status == TS_COMPLETED,
+            )
 
             return {
                 # server
                 "server_status": self.server_status,
                 "server_error": self.server_error,
                 "server_sessions": self.server_sessions,
-                "server_port": self.config["udp_port"],
+                "server_port": (self.server.bound_port if self.server
+                                else self.config["udp_port"]),
                 # config
                 "config": dict(self.config),
                 "testing": dict(self.testing),
@@ -483,39 +493,47 @@ class TransferManager:
                 "last_duplicate_seq": self.last_duplicate_seq,
                 "last_loss_seq": self.last_loss_seq,
                 "last_checksum_seq": self.last_checksum_seq,
-                "progress_percent": progress,
                 "elapsed_seconds": round(self.elapsed_seconds, 2),
                 "received_path": self.received_path,
-                # performance statistics
+                # performance statistics (see transfer/stats.py)
                 "wire_bytes": self.wire_bytes,
-                "rtt_ms": round(self.rtt_current, 2)
-                if self.rtt_current is not None else None,
-                "rtt_min_ms": round(self.rtt_min, 2)
-                if self.rtt_min is not None else None,
-                "rtt_max_ms": round(self.rtt_max, 2)
-                if self.rtt_max is not None else None,
-                "srtt_ms": round(self.srtt, 2) if self.srtt is not None else None,
-                "rtt_samples": self.rtt_samples,
-                "goodput_kbps": round(goodput_bps / 1024, 2),
-                "throughput_kbps": round(throughput_bps / 1024, 2),
-                "loss_percent": round(loss_percent, 2),
-                "eta_seconds": round(eta, 1) if eta is not None else None,
+                **self.rtt.as_dict(),
+                **metrics,
                 # feature scoping
                 "checksum": "enabled",
                 "resume": "enabled",
                 "resumed_from_seq": self.resumed_from_seq,
                 "resumed_bytes": self.resumed_bytes,
+                # source-side multipath scheduler (live lane health)
+                "scheduler": (self.client.scheduler.state()
+                              if self.client is not None
+                              and getattr(self.client, "scheduler", None)
+                              is not None else None),
             }
 
     def packet_log(self, limit=150):
         """Most recent packet log entries (ordered by send time)."""
         with self._lock:
-            seqs = self._packet_order[-limit:]
-            return [self.packets[s] for s in seqs]
+            return self.events.packet_log(limit)
 
     def recent_feed(self, limit=500):
         with self._lock:
-            return list(self.feed[-limit:])
+            return self.events.recent_feed(limit)
+
+    # ---------------------------------------------------------------- topology
+    def topology_snapshot(self):
+        """``GET /api/topology``: preset graph, active route, live link stats."""
+        with self._lock:
+            return self.topology.snapshot(
+                server_port=self.server.bound_port if self.server else None,
+                server_running=self.server_status == SS_RUNNING,
+                fallback={
+                    "packets_sent": self.packets_sent,
+                    "retransmissions": self.retransmissions,
+                    "packets_acked": self.packets_acked,
+                    "packets_lost": self.packets_lost,
+                },
+            )
 
     # ------------------------------------------------------------------ resume
     def resume_check(self, name, size):
@@ -558,7 +576,6 @@ class TransferManager:
     # ------------------------------------------------------------------
     @staticmethod
     def _received_dir():
-        import os
         # repo root = three levels up from transfer/manager.py
         root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         return os.path.join(root, "transfers", "received")

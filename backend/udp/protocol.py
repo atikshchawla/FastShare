@@ -61,7 +61,6 @@ DEFAULT_MAX_RETRIES = 5    # retransmission limit per packet
 
 # Network safety: UDP payload must fit a single datagram.
 MAX_PAYLOAD_LENGTH = 64512  # 65507 - 13 header - margin
-MIN_PAYLOAD_LENGTH = 16
 
 # START packet payload layout: name_len + file_size + total_packets + packet_size
 # + resume_flag (1 = sender is willing to resume) + raw name

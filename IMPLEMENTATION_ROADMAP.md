@@ -1,5 +1,10 @@
 # FastShare — Implementation Plan: Remaining Features
 
+> **Status: all three features below are implemented and tested** (CRC-32
+> checksum, advanced statistics, resume). Verification lives in
+> `PROJECT_PLAN.md` (test inventory) and the suite named in the README;
+> the next phase is specified in `FEATURE_SPEC_MULTI_SERVER_TOPOLOGY.md`.
+
 This plan details the architecture and step-by-step implementation for the three remaining features of the **FastShare Reliable UDP File Transfer Protocol**:
 1. **Checksum Verification (Data Integrity via CRC-32)**
 2. **Advanced Transfer Statistics (RTT, Throughput/Goodput, Packet Loss %, ETA)**

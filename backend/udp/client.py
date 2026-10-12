@@ -28,6 +28,7 @@ import time
 
 from . import protocol
 from .packet import ChecksumError, build_packet, corrupt_datagram, parse_packet
+from .scheduler import PathScheduler
 
 # Statuses used in the UI packet monitor
 STATUS_SENT = "SENT"
@@ -48,7 +49,7 @@ class UDPClient:
                  ack_corrupt_probability=0.0,
                  emit=None, message=None, finished=None,
                  on_checksum_error=None, on_resume=None,
-                 verbose=None):
+                 lanes=None, multipath=None):
         self.host = host
         self.port = port
         self.packet_size = packet_size
@@ -70,9 +71,34 @@ class UDPClient:
         self.on_checksum_error = on_checksum_error or (lambda seq: None)
         # on_resume(resumed_seq, received_bytes) -> None
         self.on_resume = on_resume or (lambda seq, received: None)
-        self._verbose = verbose
-        self.verbose = False
+        self.verbose = False   # log policy: full for small files (set in send_file)
         self.total_packets = 0
+
+        # ---- multipath (multi-path Phase 3) --------------------------------
+        # ``lanes`` comes from topology prepare_transfer: one entry per
+        # simple path [{"nodes": [...], "entry_host": .., "entry_port": ..}].
+        # With >1 lane and multipath enabled the socket stays UNCONNECTED
+        # and every attempt is sent to the lane the scheduler picked; ACKs
+        # mirror back on the same path (node-disjoint lanes) and are matched
+        # by sequence number, so no per-lane bookkeeping is needed there.
+        self.lanes = list(lanes) if lanes else []
+        mp = dict(multipath or {})
+        self.multipath_enabled = bool(self.lanes) and len(self.lanes) > 1 \
+            and bool(mp.get("enabled", True))
+        if self.lanes:
+            self.scheduler = PathScheduler(
+                len(self.lanes),
+                enabled=self.multipath_enabled,
+                window=mp.get("window", 100),
+                flag_loss=mp.get("flag_loss", 0.20),
+                recover_loss=mp.get("recover_loss", 0.10),
+                probe_share=mp.get("probe_share", 0.10),
+                explore_per_lane=mp.get("explore_per_lane", 10),
+                min_samples=mp.get("min_samples"),
+                on_event=self.message,
+            )
+        else:
+            self.scheduler = None
 
         self.sock = None
         self._stop = threading.Event()
@@ -106,13 +132,17 @@ class UDPClient:
         total_packets = math.ceil(file_size / self.packet_size)
 
         self.total_packets = total_packets
-        self.verbose = (total_packets <= 500) if self._verbose is None else bool(self._verbose)
+        # Small transfers log every packet; big ones sample every 50.
+        self.verbose = total_packets <= 500
         if not self.verbose:
             self.message(f"Large transfer ({total_packets} packets) -- logging sampled every 50 packets")
 
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.sock.settimeout(self.timeout)
-        self.sock.connect((self.host, self.port))
+        if self.multipath_enabled:
+            self.sock.bind(("", 0))   # unconnected: sendto() per lane entry
+        else:
+            self.sock.connect((self.host, self.port))
 
         started = time.monotonic()
         try:
@@ -172,6 +202,21 @@ class UDPClient:
             self.close()
 
     # ------------------------------------------------------------------
+    def _pick_lane(self):
+        """Scheduler pick for the next attempt (None = legacy single path)."""
+        if self.scheduler is None or not self.multipath_enabled:
+            return None
+        return self.scheduler.pick()
+
+    def _transmit(self, packet, lane):
+        if lane is None:
+            self.sock.send(packet)
+        else:
+            entry = self.lanes[lane]
+            self.sock.sendto(packet,
+                             (entry["entry_host"], entry["entry_port"]))
+
+    # ------------------------------------------------------------------
     def _send_control(self, ptype, seq, payload=b""):
         """Send a START/END packet and wait for its ACK (Stop-and-Wait).
 
@@ -181,56 +226,74 @@ class UDPClient:
         label = protocol.type_name(ptype)
         packet = build_packet(seq, ptype, payload)
         for attempt in range(self.max_retries + 1):
+            lane = self._pick_lane()
             if attempt > 0:
-                self._mark(seq, label, len(packet), STATUS_TIMEOUT, attempt)
-                self._mark(seq, label, len(packet), STATUS_RETRANSMITTED, attempt)
+                self._mark(seq, label, len(packet), STATUS_TIMEOUT, attempt,
+                           lane=lane)
+                self._mark(seq, label, len(packet), STATUS_RETRANSMITTED,
+                           attempt, lane=lane)
                 self.message(f"CLIENT -> {label} #{seq} RETRANSMIT (attempt {attempt + 1})")
             else:
                 self.message(f"CLIENT -> {label} #{seq} sent")
-            self._mark(seq, label, len(packet), STATUS_SENT, attempt)
+            self._mark(seq, label, len(packet), STATUS_SENT, attempt,
+                       lane=lane)
             try:
-                self.sock.send(packet)
+                self._transmit(packet, lane)
             except OSError as exc:
                 self.message(f"send error: {exc}")
                 return None
-            self._mark(seq, label, len(packet), STATUS_WAITING, attempt)
+            self._mark(seq, label, len(packet), STATUS_WAITING, attempt,
+                       lane=lane)
             ack_payload = self._wait_ack(seq)
+            if lane is not None:
+                self.scheduler.record(lane, ack_payload is not None)
             if ack_payload is not None:
-                self._mark(seq, label, len(packet), STATUS_ACKED, attempt)
+                self._mark(seq, label, len(packet), STATUS_ACKED, attempt,
+                           lane=lane)
                 self.message(f"CLIENT <- {label} ACK #{seq} received")
                 return ack_payload
-        self._mark(seq, label, len(packet), STATUS_FAILED, self.max_retries)
+        self._mark(seq, label, len(packet), STATUS_FAILED, self.max_retries,
+                   lane=lane)
         return None
 
     def _send_data_packet(self, seq, chunk):
         """Send one DATA packet and wait for ACK <seq>."""
         packet = build_packet(seq, protocol.PACKET_TYPE_DATA, chunk)
         for attempt in range(self.max_retries + 1):
+            lane = self._pick_lane()
             if attempt > 0:
-                self._mark(seq, "DATA", len(packet), STATUS_TIMEOUT, attempt)
-                self._mark(seq, "DATA", len(packet), STATUS_RETRANSMITTED, attempt)
+                self._mark(seq, "DATA", len(packet), STATUS_TIMEOUT, attempt,
+                           lane=lane)
+                self._mark(seq, "DATA", len(packet), STATUS_RETRANSMITTED,
+                           attempt, lane=lane)
                 self.message(f"CLIENT -> DATA #{seq}/{self.total_packets} RETRANSMIT (attempt {attempt + 1})")
             else:
-                self._mark(seq, "DATA", len(packet), STATUS_SENT, attempt)
+                self._mark(seq, "DATA", len(packet), STATUS_SENT, attempt,
+                           lane=lane)
                 if self.verbose or seq == 1 or seq == self.total_packets or seq % 50 == 0:
                     self.message(f"CLIENT -> DATA #{seq}/{self.total_packets} sent ({len(chunk)}B)")
             try:
                 sent_at = time.monotonic()
-                self.sock.send(packet)
+                self._transmit(packet, lane)
             except OSError as exc:
                 self.message(f"send error: {exc}")
                 return False
-            self._mark(seq, "DATA", len(packet), STATUS_WAITING, attempt)
-            if self._wait_ack(seq) is not None:
+            self._mark(seq, "DATA", len(packet), STATUS_WAITING, attempt,
+                       lane=lane)
+            acked = self._wait_ack(seq) is not None
+            if lane is not None:
+                self.scheduler.record(lane, acked)
+            if acked:
                 # RTT = send -> matching ACK, per RFC-style sampling
                 rtt_ms = (time.monotonic() - sent_at) * 1000.0
                 self._mark(seq, "DATA", len(packet), STATUS_ACKED, attempt,
-                           rtt_ms=rtt_ms)
+                           rtt_ms=rtt_ms, lane=lane)
                 if self.verbose or seq == 1 or seq == self.total_packets or seq % 50 == 0:
                     self.message(f"CLIENT <- ACK #{seq} received")
                 return True
             self.message(f"DATA #{seq} lost -> timeout ({attempt + 1})")
-        self._mark(seq, "DATA", len(packet), STATUS_FAILED, self.max_retries)
+        self._mark(seq, "DATA", len(packet), STATUS_FAILED, self.max_retries,
+                   lane=lane)
         return False
 
     # ------------------------------------------------------------------
@@ -278,7 +341,8 @@ class UDPClient:
         return None
 
     # ------------------------------------------------------------------
-    def _mark(self, seq, ptype_label, size, status, retries, rtt_ms=None):
+    def _mark(self, seq, ptype_label, size, status, retries, rtt_ms=None,
+              lane=None):
         entry = {
             "seq": seq,
             "type": ptype_label,
@@ -288,6 +352,8 @@ class UDPClient:
         }
         if rtt_ms is not None:
             entry["rtt_ms"] = round(rtt_ms, 3)
+        if lane is not None:
+            entry["lane"] = lane    # multipath: which lane carried it
         self.emit(entry)
 
     def _bail(self, detail):

@@ -1,5 +1,5 @@
 """FastShare backend entry point.
-
+cd f
 Starts the FastAPI controller on http://localhost:8000.
 The Next.js frontend (port 3000) talks to these HTTP endpoints;
 actual file transfer runs over real UDP sockets (udp/client.py + server.py).
