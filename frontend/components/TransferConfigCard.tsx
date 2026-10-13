@@ -1,18 +1,17 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Check, Save, SlidersHorizontal } from "lucide-react";
-import { Badge, Panel, PanelHeader } from "@/components/ui";
+import { Save, SlidersHorizontal, CheckCircle2 } from "lucide-react";
+import { Panel, PanelHeader } from "@/components/ui";
 import type { Config } from "@/lib/types";
 
 export function TransferConfigCard({
   config,
-  serverRunning,
   busy,
   onSave,
 }: {
   config: Config;
-  serverRunning: boolean;
+  serverRunning?: boolean;
   busy: boolean;
   onSave: (cfg: Config) => Promise<boolean>;
 }) {
@@ -81,106 +80,121 @@ export function TransferConfigCard({
   };
 
   return (
-    <Panel>
+    <Panel className="overflow-hidden">
       <PanelHeader
-        title="TRANSFER SETTINGS"
-        icon={<SlidersHorizontal size={15} />}
+        title="Protocol Tuning & Socket Parameters"
+        badgeText="CONFIGURATION"
+        icon={<SlidersHorizontal size={20} className="stroke-[2.5]" />}
         right={
-          <div className="flex items-center gap-2">
-            <Badge tone={serverRunning ? "green" : "slate"}>
-              {serverRunning ? "RECEIVER ACTIVE" : "RECEIVER IDLE"}
-            </Badge>
+          <div className="flex items-center gap-2 font-mono text-xs sm:text-sm">
             {savedFlash && (
-              <Badge tone="green">
-                <Check size={11} /> SAVED
-              </Badge>
+              <span className="flex items-center gap-1 rounded-lg bg-emerald-50 border border-emerald-300 text-emerald-900 font-extrabold px-2.5 py-1">
+                <CheckCircle2 size={14} className="text-emerald-600" />
+                <span>SAVED</span>
+              </span>
             )}
-            {dirty && !savedFlash && <Badge tone="amber">EDITED</Badge>}
+            {dirty && !savedFlash && (
+              <span className="rounded-lg bg-amber-50 border border-amber-300 text-amber-900 font-extrabold px-2.5 py-1">
+                EDITED
+              </span>
+            )}
           </div>
         }
       />
 
-      <div className="p-4">
-        {/* Compact Grid */}
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 font-mono text-xs">
-          <div className="border-2 border-neutral-700 bg-neutral-950 p-2">
-            <span className="block text-[10px] font-bold text-neutral-500 uppercase">Server IP</span>
+      <div className="p-6 font-mono space-y-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label className="text-xs sm:text-sm font-extrabold text-slate-700 block mb-1.5 uppercase">
+              Target IP Address
+            </label>
             <input
+              type="text"
               value={form.server_ip}
               onChange={(e) => setText("server_ip", e.target.value)}
-              className="mt-1 w-full bg-neutral-900 border border-neutral-700 px-2 py-1 text-xs font-bold text-white outline-none focus:border-cyan-400"
+              className="w-full rounded-xl border-2 border-slate-200 bg-slate-50/70 px-3.5 py-2.5 text-xs sm:text-sm font-bold text-slate-900 focus:border-teal-600 focus:bg-white focus:outline-hidden transition-colors"
             />
           </div>
 
-          <div className="border-2 border-neutral-700 bg-neutral-950 p-2">
-            <span className="block text-[10px] font-bold text-neutral-500 uppercase">UDP Port</span>
+          <div>
+            <label className="text-xs sm:text-sm font-extrabold text-slate-700 block mb-1.5 uppercase">
+              UDP Socket Port
+            </label>
             <input
+              type="text"
               value={form.udp_port}
               onChange={(e) => setNum("udp_port", e.target.value)}
-              className="mt-1 w-full bg-neutral-900 border border-neutral-700 px-2 py-1 text-xs font-bold text-white outline-none focus:border-cyan-400"
+              className="w-full rounded-xl border-2 border-slate-200 bg-slate-50/70 px-3.5 py-2.5 text-xs sm:text-sm font-bold text-slate-900 focus:border-teal-600 focus:bg-white focus:outline-hidden transition-colors font-tabular"
             />
           </div>
 
-          <div className="border-2 border-neutral-700 bg-neutral-950 p-2">
-            <span className="block text-[10px] font-bold text-neutral-500 uppercase">Packet Size</span>
-            <div className="mt-1 flex items-center bg-neutral-900 border border-neutral-700 px-2 py-1">
-              <input
-                value={form.packet_size}
-                onChange={(e) => setNum("packet_size", e.target.value)}
-                className="w-full bg-transparent text-xs font-bold text-white outline-none"
-              />
-              <span className="text-[10px] text-neutral-500">B</span>
-            </div>
-          </div>
-
-          <div className="border-2 border-neutral-700 bg-neutral-950 p-2">
-            <span className="block text-[10px] font-bold text-neutral-500 uppercase">Timeout</span>
-            <div className="mt-1 flex items-center bg-neutral-900 border border-neutral-700 px-2 py-1">
-              <input
-                value={form.timeout_ms}
-                onChange={(e) => setNum("timeout_ms", e.target.value)}
-                className="w-full bg-transparent text-xs font-bold text-white outline-none"
-              />
-              <span className="text-[10px] text-neutral-500">ms</span>
-            </div>
-          </div>
-
-          <div className="border-2 border-neutral-700 bg-neutral-950 p-2">
-            <span className="block text-[10px] font-bold text-neutral-500 uppercase">Max Retries</span>
+          <div>
+            <label className="text-xs sm:text-sm font-extrabold text-slate-700 block mb-1.5 uppercase">
+              Packet MSS Size (Bytes)
+            </label>
             <input
+              type="text"
+              value={form.packet_size}
+              onChange={(e) => setNum("packet_size", e.target.value)}
+              className="w-full rounded-xl border-2 border-slate-200 bg-slate-50/70 px-3.5 py-2.5 text-xs sm:text-sm font-bold text-slate-900 focus:border-teal-600 focus:bg-white focus:outline-hidden transition-colors font-tabular"
+            />
+          </div>
+
+          <div>
+            <label className="text-xs sm:text-sm font-extrabold text-slate-700 block mb-1.5 uppercase">
+              ARQ Retransmit Timeout (ms)
+            </label>
+            <input
+              type="text"
+              value={form.timeout_ms}
+              onChange={(e) => setNum("timeout_ms", e.target.value)}
+              className="w-full rounded-xl border-2 border-slate-200 bg-slate-50/70 px-3.5 py-2.5 text-xs sm:text-sm font-bold text-slate-900 focus:border-teal-600 focus:bg-white focus:outline-hidden transition-colors font-tabular"
+            />
+          </div>
+
+          <div>
+            <label className="text-xs sm:text-sm font-extrabold text-slate-700 block mb-1.5 uppercase">
+              Max ARQ Retries
+            </label>
+            <input
+              type="text"
               value={form.max_retries}
               onChange={(e) => setNum("max_retries", e.target.value)}
-              className="mt-1 w-full bg-neutral-900 border border-neutral-700 px-2 py-1 text-xs font-bold text-white outline-none focus:border-cyan-400"
+              className="w-full rounded-xl border-2 border-slate-200 bg-slate-50/70 px-3.5 py-2.5 text-xs sm:text-sm font-bold text-slate-900 focus:border-teal-600 focus:bg-white focus:outline-hidden transition-colors font-tabular"
             />
           </div>
 
-          <div className="border-2 border-neutral-700 bg-neutral-950 p-2 opacity-80">
-            <span className="block text-[10px] font-bold text-neutral-500 uppercase">Window</span>
-            <div className="mt-1 bg-neutral-900 border border-neutral-800 px-2 py-1 font-bold text-cyan-400">
-              1 (Locked)
-            </div>
+          <div>
+            <label className="text-xs sm:text-sm font-extrabold text-slate-700 block mb-1.5 uppercase">
+              ARQ Window Size
+            </label>
+            <input
+              type="text"
+              disabled
+              value="1 (Stop-and-Wait Lockstep)"
+              className="w-full rounded-xl border-2 border-slate-200 bg-slate-100 px-3.5 py-2.5 text-xs sm:text-sm font-bold text-slate-500 cursor-not-allowed"
+            />
           </div>
         </div>
 
         {error && (
-          <div className="mt-3 border-2 border-red-500 bg-red-500/10 p-2 font-mono text-[11px] font-bold text-red-400">
+          <p className="rounded-xl border-2 border-rose-200 bg-rose-50 p-3 text-xs sm:text-sm font-bold text-rose-700">
             {error}
-          </div>
+          </p>
         )}
 
-        <div className="mt-3 flex items-center justify-between">
-          <span className="font-mono text-[10px] text-neutral-500">
-            * Window locked to 1 for Stop-and-Wait ARQ
-          </span>
-          <button
-            onClick={() => void save()}
-            disabled={busy || !dirty}
-            className="flex items-center gap-1.5 border-2 border-cyan-500 bg-cyan-500/20 px-3 py-1 font-mono text-xs font-bold uppercase text-cyan-300 shadow-[2px_2px_0px_#000] hover:bg-cyan-500/30 disabled:opacity-40 cursor-pointer"
-          >
-            <Save size={13} />
-            APPLY SETTINGS
-          </button>
-        </div>
+        <button
+          onClick={save}
+          disabled={!dirty || busy}
+          className={`flex w-full items-center justify-center gap-2 rounded-xl py-3 text-xs sm:text-sm font-extrabold uppercase transition-all shadow-xs ${
+            dirty && !busy
+              ? "bg-orange-600 text-white hover:bg-orange-500 cursor-pointer shadow-orange-600/20"
+              : "bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed"
+          }`}
+        >
+          <Save size={16} />
+          <span>[ Save Socket Parameters ]</span>
+        </button>
       </div>
     </Panel>
   );

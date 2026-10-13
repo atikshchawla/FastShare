@@ -1,114 +1,118 @@
 "use client";
 
-import { Check, Info, Cpu } from "lucide-react";
-import { Badge, Panel, PanelHeader } from "@/components/ui";
+import { Check, Cpu } from "lucide-react";
+import { Panel, PanelHeader } from "@/components/ui";
 import type { Snapshot } from "@/lib/types";
 
 const IMPLEMENTED_FEATURES = [
-  "UDP Client / Server",
-  "File Packetization",
-  "Sequence Numbers",
-  "ACK Mechanism",
-  "Stop-and-Wait ARQ",
-  "Retransmission on Timeout",
-  "Duplicate Handling",
-  "Packet Loss Simulation",
-  "CRC-32 Checksum Verification",
-  "Corruption Simulation (both directions)",
-  "Resume Interrupted Transfer (.part + .meta)",
-  "Statistics: RTT/SRTT, goodput, loss, ETA",
+  "Raw UDP Socket Client / Server Architecture",
+  "Application-Layer Packet Segmentation (MTU/MSS)",
+  "Monotonic Sequence Numbers (Stop-and-Wait)",
+  "Explicit Acknowledgement (ACK) Control Packets",
+  "Stop-and-Wait ARQ Automatic Retransmit on Timeout",
+  "Receiver Duplicate Packet Discarding",
+  "Live Network Fault Simulation (Drop & Bitflip)",
+  "CRC-32 Checksum Integrity Verification",
+  "Corrupted Frame Silent Drop (Triggering Timeout)",
+  "Resume Interrupted Sessions via State Metainfo",
+  "EWMA Smoothed Round-Trip-Time (SRTT) RFC 6298",
+  "Net Goodput vs Total Wire Overhead Telemetry",
 ];
 
 const PROTOCOL_PROPERTIES = [
-  "Window size = 1 (pure Stop-and-Wait)",
-  "Header: seq(4) + type(1) + len(4) + crc32(4)",
-  "CRC-32 over payload (zlib, wire + replay path)",
-  "Corrupted packets dropped without ACK",
-  "Resume point = whole packets already on disk",
-  "SRTT = EWMA(0.875, 0.125), RFC 6298 style",
-  "Goodput excludes bytes reused by resume",
+  "ARQ Window Size = 1 (Pure Stop-and-Wait)",
+  "Custom Binary Header: SEQ(4B) + TYPE(1B) + LEN(4B) + CRC(4B)",
+  "End-to-End CRC-32 integrity over raw datagram payload",
+  "Sender retransmission timer backed by select()/socket timeout",
+  "Interrupted transfer recovery resumes from last confirmed packet",
+  "SRTT computed with alpha=0.125 smoothing filter",
+  "Goodput metric computes payload bytes delivered per second",
 ];
 
 export function ProtocolPanel({ status }: { status: Snapshot | null }) {
   const packetSize = status?.config.packet_size ?? 1024;
+
   return (
-    <Panel>
+    <Panel className="overflow-hidden">
       <PanelHeader
-        title="PROTOCOL SPECIFICATION & STATUS"
-        icon={<Cpu size={15} />}
+        title="Protocol Specification & RFC Compliance Matrix"
+        badgeText="SPECIFICATION SHEET"
+        icon={<Cpu size={20} className="stroke-[2.5]" />}
         right={
-          <Badge tone="cyan" className="font-mono text-[10px]">
-            RFC SPECIFICATION
-          </Badge>
+          <span className="font-mono text-xs sm:text-sm font-extrabold text-teal-800 bg-teal-50 px-3 py-1 rounded-xl border border-teal-200">
+            FASTSHARE RFC SPEC
+          </span>
         }
       />
 
-      <div className="p-4 space-y-4">
+      <div className="p-6 font-mono text-xs sm:text-sm space-y-6">
         {/* Wire Header Specification */}
-        <div className="border-2 border-neutral-700 bg-neutral-950 p-3 font-mono text-xs">
-          <p className="text-[10px] font-black uppercase tracking-widest text-cyan-400 mb-2">
-            FASTSHARE BINARY WIRE FORMAT (13-BYTE HEADER)
-          </p>
-          <div className="grid grid-cols-2 sm:grid-cols-5 border-2 border-neutral-700 text-center font-bold">
-            <div className="border-r-2 border-neutral-700 bg-neutral-900 p-2">
-              <span className="block text-[10px] text-neutral-500">SEQ NUM</span>
-              <span className="text-white">4 BYTES</span>
+        <div className="rounded-2xl border-2 border-slate-200 bg-slate-50/70 p-5 space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="text-xs sm:text-sm font-extrabold uppercase tracking-wide text-teal-900">
+              Binary Wire Format (13-Byte Custom Datagram Header)
+            </span>
+            <span className="text-xs text-slate-500 font-semibold">
+              Network Byte Order (Big-Endian)
+            </span>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-5 divide-y-2 sm:divide-y-0 sm:divide-x-2 divide-slate-200 border-2 border-slate-200 rounded-xl bg-white text-center font-bold overflow-hidden shadow-2xs">
+            <div className="p-3.5">
+              <span className="block text-[11px] text-slate-500 uppercase font-semibold">SEQ NUMBER</span>
+              <span className="text-slate-900 text-sm sm:text-base font-extrabold mt-0.5 block font-tabular">4 BYTES</span>
             </div>
-            <div className="border-r-2 border-neutral-700 bg-neutral-900 p-2">
-              <span className="block text-[10px] text-neutral-500">TYPE</span>
-              <span className="text-white">1 BYTE</span>
+            <div className="p-3.5">
+              <span className="block text-[11px] text-slate-500 uppercase font-semibold">FRAME TYPE</span>
+              <span className="text-slate-900 text-sm sm:text-base font-extrabold mt-0.5 block">1 BYTE</span>
             </div>
-            <div className="border-r-2 border-neutral-700 bg-neutral-900 p-2">
-              <span className="block text-[10px] text-neutral-500">LENGTH</span>
-              <span className="text-white">4 BYTES</span>
+            <div className="p-3.5">
+              <span className="block text-[11px] text-slate-500 uppercase font-semibold">PAYLOAD LEN</span>
+              <span className="text-slate-900 text-sm sm:text-base font-extrabold mt-0.5 block font-tabular">4 BYTES</span>
             </div>
-            <div className="border-r-2 sm:border-r-2 border-neutral-700 bg-neutral-900 p-2">
-              <span className="block text-[10px] text-neutral-500">CRC-32</span>
-              <span className="text-amber-300">4 BYTES</span>
+            <div className="p-3.5">
+              <span className="block text-[11px] text-slate-500 uppercase font-semibold">CRC-32 CODE</span>
+              <span className="text-orange-600 text-sm sm:text-base font-extrabold mt-0.5 block">4 BYTES</span>
             </div>
-            <div className="bg-neutral-800 p-2">
-              <span className="block text-[10px] text-neutral-500">PAYLOAD</span>
-              <span className="text-cyan-300">{packetSize} BYTES MAX</span>
+            <div className="p-3.5 bg-teal-50/80">
+              <span className="block text-[11px] text-teal-900 font-extrabold uppercase">PAYLOAD CHUNK</span>
+              <span className="text-teal-950 text-sm sm:text-base font-extrabold mt-0.5 block font-tabular">≤ {packetSize} B</span>
             </div>
           </div>
         </div>
 
-        {/* Feature Implementation Status (Requirement from Section 9) */}
+        {/* Feature Implementation Status */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {/* IMPLEMENTED */}
-          <div className="border-2 border-green-500/50 bg-green-950/10 p-3">
-            <p className="text-xs font-black uppercase tracking-widest text-green-400 mb-2 flex items-center gap-1.5">
-              <span className="inline-block h-2 w-2 bg-green-400" />
-              IMPLEMENTED
-            </p>
-            <div className="space-y-1.5 font-mono text-xs">
+          {/* Implemented checklist */}
+          <div className="rounded-2xl border-2 border-teal-200 bg-teal-50/40 p-5">
+            <span className="text-xs sm:text-sm font-extrabold uppercase text-teal-950 block mb-3">
+              ✓ Core Lab Architecture Implemented
+            </span>
+            <div className="grid grid-cols-1 gap-2 text-xs sm:text-sm">
               {IMPLEMENTED_FEATURES.map((f) => (
-                <div key={f} className="flex items-center gap-2 text-neutral-200">
-                  <Check size={14} className="text-green-400 shrink-0" />
-                  <span>{f}</span>
+                <div key={f} className="flex items-center gap-2 text-slate-800">
+                  <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-teal-700 text-white">
+                    <Check size={11} className="stroke-[3]" />
+                  </span>
+                  <span className="font-medium">{f}</span>
                 </div>
               ))}
             </div>
           </div>
 
-          {/* PROTOCOL PROPERTIES */}
-          <div className="border-2 border-cyan-500/40 bg-cyan-950/10 p-3">
-            <p className="text-xs font-black uppercase tracking-widest text-cyan-400 mb-2 flex items-center gap-1.5">
-              <Info size={13} className="shrink-0" />
-              PROTOCOL PROPERTIES
-            </p>
-            <div className="space-y-1.5 font-mono text-xs">
-              {PROTOCOL_PROPERTIES.map((f) => (
-                <div key={f} className="flex items-center gap-2 text-neutral-300">
-                  <span className="text-cyan-500 shrink-0">›</span>
-                  <span>{f}</span>
+          {/* Protocol Design Rules */}
+          <div className="rounded-2xl border-2 border-slate-200 bg-slate-50/70 p-5">
+            <span className="text-xs sm:text-sm font-extrabold uppercase text-slate-800 block mb-3">
+              Engine Mechanics &amp; RFC Standards
+            </span>
+            <div className="grid grid-cols-1 gap-2 text-xs sm:text-sm">
+              {PROTOCOL_PROPERTIES.map((p, idx) => (
+                <div key={p} className="flex items-start gap-2.5 text-slate-700">
+                  <span className="text-orange-600 font-black shrink-0">0{idx + 1}.</span>
+                  <span className="font-medium leading-relaxed">{p}</span>
                 </div>
               ))}
             </div>
-            <p className="mt-3 border-t border-neutral-800 pt-2 text-[10px] font-mono text-neutral-500">
-              All roadmap features (checksum · statistics · resume) are active
-              in this build.
-            </p>
           </div>
         </div>
       </div>

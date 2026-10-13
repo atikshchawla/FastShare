@@ -21,56 +21,60 @@ export function SetupSteps({
   const nextStep = !serverRunning ? 1 : !hasFile ? 2 : 3;
 
   const steps = [
-    { n: 1, title: "1. START UDP RECEIVER", done: serverRunning },
-    { n: 2, title: "2. SELECT SOURCE FILE", done: hasFile },
-    { n: 3, title: "3. EXECUTE ARQ TRANSFER", done: completed },
+    { n: 1, title: "1. BIND RECEIVER DAEMON", sub: "UDP Socket :5001", done: serverRunning },
+    { n: 2, title: "2. SELECT & SEGMENT FILE", sub: "Divide to UDP MSS Chunks", done: hasFile },
+    { n: 3, title: "3. EXECUTE ARQ TRANSFER", sub: "Stop-and-Wait Lockstep Loop", done: completed },
   ];
 
   const hint = failed
-    ? "STATUS: TRANSFER FAILED. CHECK NETWORK STATUS AND RETRY."
+    ? "STATUS: TRANSFER FAILED. EXCEEDED MAX RETRY LIMIT. CHECK CHANNEL LOSS CONFIG."
     : cancelled
-    ? "STATUS: TRANSFER CANCELLED. READY FOR NEW JOB."
+    ? "STATUS: TRANSFER HALTED BY OPERATOR. SOCKET READY FOR NEW PAYLOAD."
     : !serverRunning
-    ? "STEP 1 REQUIRED: START UDP SERVER (PORT 5001) TO BIND SOCKET."
+    ? "STEP 1: START UDP RECEIVER (PORT 5001) TO BIND SOCKET BEFORE CLIENT TRANSMITS."
     : !hasFile
-    ? "STEP 2 REQUIRED: SELECT A FILE TO SEGMENT INTO UDP PACKETS."
+    ? "STEP 2: SELECT OR DROP PAYLOAD FILE TO DIVIDE INTO UDP MSS DATAGRAMS."
     : transferring
-    ? "STEP 3 ACTIVE: TRANSMITTING PACKETS AND AWAITING STOP-AND-WAIT ACKS."
+    ? "STEP 3 ACTIVE: TRANSMITTING DATAGRAMS AND AWAITING STOP-AND-WAIT ACKS."
     : completed
-    ? "STEP 3 COMPLETE: ALL PACKETS DELIVERED AND INTEGRITY VERIFIED."
-    : "READY: PRESS [ START TRANSFER ] TO TRANSMIT OVER UDP.";
+    ? "STEP 3 COMPLETE: ALL PACKETS VERIFIED VIA CRC-32 AND WRITTEN TO RECEIVER."
+    : "READY: PRESS [START UDP ARQ TRANSMISSION] TO COMMENCE SOCKET STREAM.";
 
   return (
-    <Panel>
-      <div className="grid grid-cols-1 sm:grid-cols-3 divide-y-2 sm:divide-y-0 sm:divide-x-2 divide-neutral-700">
+    <Panel className="overflow-hidden">
+      <div className="grid grid-cols-1 sm:grid-cols-3 divide-y-2 sm:divide-y-0 sm:divide-x-2 divide-slate-100 font-mono text-xs sm:text-sm">
         {steps.map((s) => (
           <div
             key={s.n}
-            className={`flex items-center gap-3 p-3 font-mono text-xs ${
+            className={`flex items-center gap-3.5 p-4 transition-colors ${
               s.done
-                ? "bg-green-950/30 text-green-300"
+                ? "bg-teal-50/70 text-teal-950"
                 : nextStep === s.n
-                ? "bg-cyan-950/30 text-cyan-300"
-                : "bg-neutral-900 text-neutral-500"
+                ? "bg-orange-50/70 text-orange-950"
+                : "bg-white text-slate-500"
             }`}
           >
             <span
-              className={`flex h-6 w-6 shrink-0 items-center justify-center border-2 text-[11px] font-black ${
+              className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl font-bold text-sm shadow-xs ${
                 s.done
-                  ? "border-green-500 bg-green-500 text-black"
+                  ? "bg-teal-700 text-white"
                   : nextStep === s.n
-                  ? "border-cyan-400 bg-cyan-400 text-black"
-                  : "border-neutral-700 bg-neutral-800 text-neutral-500"
+                  ? "bg-orange-600 text-white"
+                  : "bg-slate-200 text-slate-600"
               }`}
             >
-              {s.done ? <Check size={14} /> : s.n}
+              {s.done ? <Check size={18} className="stroke-[3]" /> : s.n}
             </span>
-            <span className="font-black uppercase tracking-wider">{s.title}</span>
+            <div className="min-w-0">
+              <p className="font-extrabold uppercase tracking-tight text-slate-900">{s.title}</p>
+              <p className="text-xs text-slate-500 font-semibold">{s.sub}</p>
+            </div>
           </div>
         ))}
       </div>
-      <div className="border-t-2 border-neutral-700 bg-neutral-950 px-4 py-2 font-mono text-[11px] font-bold text-neutral-400">
-        &gt; {hint}
+      <div className="border-t-2 border-slate-100 bg-slate-50/90 px-6 py-3 font-mono text-xs sm:text-sm font-bold text-slate-700 flex items-center gap-2">
+        <span className="text-teal-700 font-black">&gt;</span>
+        <span>{hint}</span>
       </div>
     </Panel>
   );

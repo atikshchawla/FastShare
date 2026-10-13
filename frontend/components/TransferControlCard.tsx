@@ -1,7 +1,7 @@
 "use client";
 
-import { Check, History, Loader2, Send, X, XOctagon } from "lucide-react";
-import { Badge, Panel, PanelHeader } from "@/components/ui";
+import { Check, History, Loader2, Play, Square } from "lucide-react";
+import { Panel, PanelHeader } from "@/components/ui";
 import { formatBytes } from "@/lib/types";
 import type { ResumeInfo, Snapshot } from "@/lib/types";
 
@@ -24,160 +24,127 @@ export function TransferControlCard({
 }) {
   const transferring = status?.transfer_status === "transferring";
   const completed = status?.transfer_status === "completed";
-  const failed = status?.transfer_status === "failed";
-  const cancelled = status?.transfer_status === "cancelled";
   const serverRunning = status?.server_status === "running";
 
   const canStart = serverRunning && hasFile && !transferring && !busy;
   const resumable = !!resumeInfo?.available && !transferring && hasFile;
 
   const checks = [
-    { id: "server", label: "UDP Receiver Online", ok: serverRunning },
-    { id: "file", label: "File Selected & Segmented", ok: hasFile },
-    { id: "busy", label: "Channel Available", ok: !transferring },
+    { id: "server", label: "UDP Receiver Daemon Active (:5001)", ok: serverRunning },
+    { id: "file", label: "Source File Loaded & Segmented", ok: hasFile },
+    { id: "busy", label: "Socket Channel Available", ok: !transferring },
   ];
 
   return (
-    <Panel>
+    <Panel className="overflow-hidden">
       <PanelHeader
-        title="TRANSFER EXECUTION"
-        icon={<Send size={15} />}
+        title="Transfer Execution Controller"
+        badgeText="TRANSMISSION CONTROLS"
+        icon={<Play size={20} className="stroke-[2.5]" />}
         right={
-          transferring ? (
-            <Badge tone="cyan">ACTIVE</Badge>
-          ) : completed ? (
-            <Badge tone="green">COMPLETED</Badge>
-          ) : (
-            <Badge tone="slate">STANDBY</Badge>
-          )
+          <span className="font-mono text-xs sm:text-sm font-bold text-teal-800 bg-teal-50 px-3 py-1 rounded-xl border border-teal-200">
+            {transferring ? "STREAMING ACTIVE" : completed ? "TX COMPLETE" : "STANDBY"}
+          </span>
         }
       />
 
-      <div className="p-4">
-        {/* Main Action Button */}
+      <div className="p-6 font-mono space-y-4">
+        {/* Main Action Button (Vibrant Teal / Abort Rose) */}
         {!transferring ? (
           <button
             onClick={() => onStart(true)}
             disabled={!canStart}
-            className={`flex w-full items-center justify-center gap-3 border-2 border-green-500 py-3.5 text-sm font-black uppercase tracking-widest transition active:translate-x-0.5 active:translate-y-0.5 ${
+            className={`flex w-full items-center justify-center gap-3 rounded-2xl py-4 text-sm sm:text-base font-extrabold uppercase tracking-wider transition-all shadow-md ${
               canStart
-                ? "bg-green-500 text-black shadow-[4px_4px_0px_#000] hover:bg-green-400 cursor-pointer"
-                : "bg-neutral-800 text-neutral-500 border-neutral-700 cursor-not-allowed opacity-60"
+                ? "bg-teal-700 text-white hover:bg-teal-600 hover:scale-[1.01] active:scale-[0.99] shadow-teal-700/25 cursor-pointer"
+                : "bg-slate-100 text-slate-400 border-2 border-slate-200 cursor-not-allowed shadow-none"
             }`}
           >
-            <Send size={16} />
-            [ START TRANSFER ]
+            <Play size={18} className="fill-current stroke-none" />
+            <span>[ START UDP ARQ TRANSMISSION ]</span>
           </button>
         ) : (
-          <div className="flex flex-col gap-2 sm:flex-row">
-            <div className="flex flex-1 items-center justify-center gap-2 border-2 border-cyan-500 bg-cyan-950/30 py-3 font-mono text-xs font-black uppercase tracking-wider text-cyan-300 shadow-[3px_3px_0px_#000]">
-              <Loader2 size={15} className="animate-spin text-cyan-400" />
-              TRANSMITTING VIA UDP...
+          <div className="flex flex-col sm:flex-row gap-3">
+            <div className="flex flex-1 items-center justify-center gap-2.5 rounded-2xl border-2 border-teal-300 bg-teal-50 p-3.5 text-xs sm:text-sm font-bold text-teal-950">
+              <Loader2 size={18} className="animate-spin text-teal-700" />
+              <span>STREAMING FRAMES OVER UDP WIRE...</span>
             </div>
             <button
               onClick={onCancel}
               disabled={busy}
-              className="flex items-center justify-center gap-2 border-2 border-red-500 bg-red-500/20 px-6 py-3 font-mono text-xs font-black uppercase tracking-wider text-red-300 shadow-[3px_3px_0px_#000] transition active:translate-x-0.5 active:translate-y-0.5 hover:bg-red-500/30 disabled:opacity-50 cursor-pointer"
+              className="flex items-center justify-center gap-2 rounded-2xl bg-rose-600 text-white px-6 py-3.5 text-xs sm:text-sm font-extrabold uppercase hover:bg-rose-500 shadow-md shadow-rose-600/25 transition-all cursor-pointer"
             >
-              <XOctagon size={15} />
-              CANCEL
+              <Square size={16} className="fill-current stroke-none" />
+              <span>ABORT</span>
             </button>
           </div>
         )}
 
-        {/* Resume banner: an interrupted copy of THIS file is on the receiver */}
+        {/* Resumable Checkpoint Notice (Orange Accent) */}
         {resumable && resumeInfo && (
-          <div className="mt-3 border-2 border-amber-500 bg-amber-950/20 p-3 font-mono text-xs">
-            <div className="flex items-center gap-2">
-              <History size={14} className="text-amber-400 shrink-0" />
-              <p className="font-black text-amber-400">
-                PARTIAL TRANSFER FOUND — {resumeInfo.percent}% ALREADY RECEIVED
-              </p>
+          <div className="rounded-2xl border-2 border-orange-300 bg-orange-50/90 p-4 text-xs sm:text-sm font-mono text-orange-950 shadow-xs">
+            <div className="flex items-center gap-2 font-extrabold">
+              <History size={16} className="text-orange-700 shrink-0" />
+              <span>PARTIAL DATA FOUND ({resumeInfo.percent}% ON RECEIVER)</span>
             </div>
-            <p className="mt-1 text-[11px] text-neutral-400">
-              {formatBytes(resumeInfo.received_bytes)} of{" "}
-              {formatBytes(resumeInfo.file_size)} sit on the receiver; resuming
-              continues at packet #{resumeInfo.resumed_seq + 1} of{" "}
-              {resumeInfo.total_packets}.
+            <p className="mt-1 text-xs text-orange-900 font-medium">
+              {formatBytes(resumeInfo.received_bytes)} of {formatBytes(resumeInfo.file_size)} already on disk. Resuming continues from packet #{resumeInfo.resumed_seq + 1}.
             </p>
-            <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+            <div className="mt-3 flex gap-2">
               <button
                 onClick={() => onStart(true)}
                 disabled={!canStart}
-                className="flex flex-1 items-center justify-center gap-2 border-2 border-amber-500 bg-amber-500 px-3 py-2 text-[11px] font-black uppercase tracking-wider text-black shadow-[3px_3px_0px_#000] transition active:translate-x-0.5 active:translate-y-0.5 hover:bg-amber-400 disabled:opacity-50 cursor-pointer"
+                className="flex-1 rounded-xl bg-orange-600 text-white px-3 py-2 text-xs sm:text-sm font-extrabold uppercase hover:bg-orange-500 shadow-xs transition-colors"
               >
-                ▶ RESUME FROM PACKET #{resumeInfo.resumed_seq + 1}
+                Resume from #{resumeInfo.resumed_seq + 1}
               </button>
               <button
                 onClick={() => onStart(false)}
                 disabled={!canStart}
-                className="flex items-center justify-center gap-2 border-2 border-neutral-600 bg-neutral-900 px-3 py-2 text-[11px] font-black uppercase tracking-wider text-neutral-300 shadow-[3px_3px_0px_#000] transition active:translate-x-0.5 active:translate-y-0.5 hover:bg-neutral-800 disabled:opacity-50 cursor-pointer"
+                className="rounded-xl border-2 border-orange-300 bg-white text-orange-950 px-3 py-2 text-xs sm:text-sm font-bold uppercase hover:bg-orange-100 transition-colors"
               >
-                START OVER
+                Start Over
               </button>
             </div>
           </div>
         )}
 
-        {/* Status result alert */}
-        {completed && (
-          <div className="mt-3 border-2 border-green-500 bg-green-950/20 p-3 font-mono text-xs">
-            <p className="font-black text-green-400">✓ FILE TRANSFER COMPLETED SUCCESSFULLY</p>
-            {status?.received_path && (
-              <p className="mt-1 truncate text-[11px] text-neutral-400" title={status.received_path}>
-                Destination: {status.received_path}
-              </p>
-            )}
-          </div>
-        )}
-        {failed && (
-          <div className="mt-3 border-2 border-red-500 bg-red-950/20 p-3 font-mono text-xs">
-            <p className="font-black text-red-400">✕ TRANSFER FAILED</p>
-            {status?.transfer_error && (
-              <p className="mt-1 text-[11px] text-neutral-400">{status.transfer_error}</p>
-            )}
-          </div>
-        )}
-        {cancelled && (
-          <div className="mt-3 border-2 border-amber-500 bg-amber-950/20 p-3 font-mono text-xs text-amber-400 font-bold">
-            ⚠ TRANSFER ABORTED BY USER
-          </div>
-        )}
-
-        {/* Readiness Pre-flight Checklist */}
-        <div className="mt-4 border-t-2 border-neutral-700 pt-3">
-          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-neutral-500 mb-2">
-            PRE-FLIGHT READINESS
-          </p>
-          <div className="space-y-1.5 font-mono text-xs">
-            {checks.map((c) => (
-              <div
-                key={c.id}
-                className="flex items-center justify-between border-2 border-neutral-800 bg-neutral-950 px-3 py-1.5"
+        {/* Checklist of Pre-Flight Conditions */}
+        <div className="rounded-2xl border-2 border-slate-100 bg-slate-50/70 p-4 text-xs sm:text-sm space-y-2.5">
+          <span className="text-[11px] font-extrabold uppercase tracking-wider text-slate-500 block mb-1">
+            Pre-flight Socket Verification
+          </span>
+          {checks.map((c) => (
+            <div key={c.id} className="flex items-center justify-between">
+              <span className={c.ok ? "text-slate-800 font-semibold" : "text-slate-400"}>
+                {c.label}
+              </span>
+              <span
+                className={`flex h-5 w-5 items-center justify-center rounded-md font-bold text-xs ${
+                  c.ok
+                    ? "bg-teal-700 text-white"
+                    : "bg-slate-200 text-slate-400"
+                }`}
               >
-                <div className="flex items-center gap-2">
-                  {c.ok ? (
-                    <Check size={14} className="text-green-400" />
-                  ) : (
-                    <X size={14} className="text-red-400" />
-                  )}
-                  <span className={c.ok ? "text-neutral-200" : "text-neutral-500"}>
-                    {c.label}
-                  </span>
-                </div>
-                {!c.ok && c.id === "server" && (
-                  <button
-                    onClick={onStartServer}
-                    disabled={busy}
-                    className="border border-green-500 bg-green-500/20 px-2 py-0.5 text-[10px] font-black uppercase text-green-300 hover:bg-green-500/30"
-                  >
-                    Start Server
-                  </button>
-                )}
-              </div>
-            ))}
-          </div>
+                {c.ok ? <Check size={12} className="stroke-[3]" /> : "·"}
+              </span>
+            </div>
+          ))}
         </div>
+
+        {/* Actionable Prompt if Server is Down */}
+        {!serverRunning && (
+          <div className="rounded-xl border-2 border-orange-200 bg-orange-50/80 p-3 text-xs sm:text-sm font-medium text-orange-950 flex items-center justify-between">
+            <span>Receiver Daemon is offline. Bind socket to enable transfer:</span>
+            <button
+              onClick={onStartServer}
+              disabled={busy}
+              className="rounded-lg bg-orange-600 text-white px-3 py-1 text-xs font-bold uppercase hover:bg-orange-500 shadow-xs ml-2 shrink-0"
+            >
+              Start Daemon
+            </button>
+          </div>
+        )}
       </div>
     </Panel>
   );

@@ -1,9 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { FlaskConical, Play, ShieldAlert, Zap } from "lucide-react";
-import { Badge, Panel, PanelHeader } from "@/components/ui";
-import { cn } from "@/lib/cn";
+import { FlaskConical, Play, ShieldAlert, Zap, AlertTriangle } from "lucide-react";
+import { Panel, PanelHeader } from "@/components/ui";
 import type { Snapshot, TestingConfig } from "@/lib/types";
 
 interface Scenario {
@@ -12,50 +11,38 @@ interface Scenario {
   loss: number;
   corrupt: number;
   expected: string;
-  tone: "green" | "amber" | "red" | "violet";
 }
 
 const SCENARIOS: Scenario[] = [
   {
     id: "normal",
-    label: "Test 1 · Normal",
+    label: "TEST 1 · ZERO FAULTS (BASELINE)",
     loss: 0,
     corrupt: 0,
-    expected: "All packets ACKed · 0 retransmissions",
-    tone: "green",
+    expected: "Reliable transfer · 0 timeouts · Fast completion",
   },
   {
     id: "loss10",
-    label: "Test 2 · 10% Loss",
+    label: "TEST 2 · 10% CHANNEL PACKET LOSS",
     loss: 0.1,
     corrupt: 0,
-    expected: "Some timeouts → retransmission → still completes",
-    tone: "amber",
+    expected: "Timeout ARQ triggers → Retransmissions recover data",
   },
   {
     id: "loss50",
-    label: "Test 3 · 50% Loss",
+    label: "TEST 3 · 50% HEAVY LOSS STRESS",
     loss: 0.5,
     corrupt: 0,
-    expected: "Heavy retransmission · may hit retry limit",
-    tone: "red",
+    expected: "Frequent retries · Exercises max retry threshold",
   },
   {
     id: "corrupt10",
-    label: "Test 4 · 10% Corruption",
+    label: "TEST 4 · 10% CRC-32 BIT CORRUPTION",
     loss: 0,
     corrupt: 0.1,
-    expected: "CRC-32 catches bit flips → dropped → retransmit",
-    tone: "violet",
+    expected: "CRC-32 catches bad packet → Silent drop → Retransmit",
   },
 ];
-
-const TONES: Record<Scenario["tone"], "green" | "amber" | "red" | "violet"> = {
-  green: "green",
-  amber: "amber",
-  red: "red",
-  violet: "violet",
-};
 
 export function TestingPanel({
   status,
@@ -91,7 +78,6 @@ export function TestingPanel({
   ]);
 
   const transferring = status?.transfer_status === "transferring";
-  const crcErrors = status?.checksum_errors ?? 0;
 
   const pick = (s: Scenario) => {
     setActive(s.id);
@@ -108,155 +94,147 @@ export function TestingPanel({
     corrupt_probability: corruptProb,
   });
 
-  const simBadge = () => {
-    const parts: string[] = [];
-    if (lossOn) parts.push(`drop ${Math.round(lossProb * 100)}%`);
-    if (corruptOn) parts.push(`corrupt ${Math.round(corruptProb * 100)}%`);
-    return parts.length ? parts.join(" · ") : "OFF";
-  };
-
-  const simToggle = (
-    on: boolean,
-    onToggle: () => void,
-    title: string,
-    sub: string,
-    icon: React.ReactNode,
-  ) => (
-    <div className="flex items-center gap-3 rounded-lg border border-slate-800 bg-[#070b12] px-3 py-2.5">
-      <button
-        role="switch"
-        aria-checked={on}
-        onClick={onToggle}
-        className={cn(
-          "relative h-5 w-10 shrink-0 rounded-full transition",
-          on ? "bg-amber-500/70" : "bg-slate-700",
-        )}
-      >
-        <span
-          className={cn(
-            "absolute top-0.5 h-4 w-4 rounded-full bg-white transition-all",
-            on ? "left-[22px]" : "left-0.5",
-          )}
-        />
-      </button>
-      <span className="shrink-0 text-amber-400/80">{icon}</span>
-      <div className="min-w-0">
-        <p className="text-[12px] font-semibold text-slate-200">{title}</p>
-        <p className="truncate font-mono text-[10px] text-slate-500">{sub}</p>
-      </div>
-    </div>
-  );
-
-  const probSelect = (label: string, value: number, onChange: (v: number) => void) => (
-    <div className="flex items-center justify-between gap-2 rounded-lg border border-slate-800 bg-[#070b12] px-3 py-2.5">
-      <span className="text-[12px] text-slate-300">{label}</span>
-      <select
-        value={value}
-        onChange={(e) => onChange(Number(e.target.value))}
-        className="rounded-md border border-slate-700 bg-[#0a0f1a] px-2 py-1.5 font-mono text-[12px] text-slate-100 outline-none focus:border-amber-500/60"
-      >
-        {[0, 0.05, 0.1, 0.25, 0.5].map((p) => (
-          <option key={p} value={p}>
-            {Math.round(p * 100)}%
-          </option>
-        ))}
-      </select>
-    </div>
-  );
-
   return (
-    <Panel>
+    <Panel className="overflow-hidden">
       <PanelHeader
-        title="Testing — Network Fault Simulation"
-        icon={<FlaskConical size={14} />}
+        title="Physical Channel Fault Injection & Stress Lab"
+        badgeText="FAULT INJECTION DECK"
+        icon={<FlaskConical size={20} className="stroke-[2.5]" />}
         right={
-          <div className="flex items-center gap-2">
-            {crcErrors > 0 && (
-              <Badge tone="violet" className="font-mono">
-                CRC {crcErrors}
-              </Badge>
-            )}
-            <Badge tone={lossOn || corruptOn ? "amber" : "slate"}>
-              {simBadge()}
-            </Badge>
-          </div>
+          (lossOn || corruptOn) && (
+            <div className="flex items-center gap-1.5 rounded-lg bg-orange-50 border border-orange-300 px-3 py-1 text-xs font-mono font-extrabold text-orange-950 animate-pulse">
+              <AlertTriangle size={14} className="text-orange-600" />
+              <span>SIMULATION ACTIVE</span>
+            </div>
+          )
         }
       />
 
-      <div className="p-4">
-        <div className="grid grid-cols-2 gap-3">
-          {simToggle(
-            lossOn,
-            () => setLossOn((e) => !e),
-            "Packet Loss",
-            "drop incoming packets / ACKs",
-            <Zap size={14} />,
-          )}
-          {probSelect("Loss Probability", lossProb, setLossProb)}
-          {simToggle(
-            corruptOn,
-            () => setCorruptOn((e) => !e),
-            "Corruption (CRC-32)",
-            "flip a bit in transit — CRC catches it",
-            <ShieldAlert size={14} />,
-          )}
-          {probSelect("Corruption Rate", corruptProb, setCorruptProb)}
+      <div className="p-6 font-mono space-y-6">
+        {/* Preset Scenarios Grid */}
+        <div>
+          <span className="text-xs sm:text-sm font-extrabold text-slate-700 uppercase tracking-wide block mb-3">
+            Academic Lab Test Scenarios:
+          </span>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            {SCENARIOS.map((s) => (
+              <button
+                key={s.id}
+                type="button"
+                onClick={() => pick(s)}
+                className={`rounded-2xl border-2 p-4 text-left transition-all ${
+                  active === s.id
+                    ? "border-orange-500 bg-orange-50/70 shadow-xs ring-2 ring-orange-200"
+                    : "border-slate-200 bg-slate-50/60 hover:border-slate-300 hover:bg-white"
+                }`}
+              >
+                <span className="block text-xs font-extrabold text-slate-900 uppercase">
+                  {s.label}
+                </span>
+                <span className="mt-1.5 block text-xs text-slate-500 font-medium leading-relaxed">
+                  {s.expected}
+                </span>
+              </button>
+            ))}
+          </div>
         </div>
 
-        <div className="mt-3 space-y-1.5">
-          {SCENARIOS.map((s) => (
-            <button
-              key={s.id}
-              onClick={() => pick(s)}
-              className={cn(
-                "flex w-full items-center justify-between gap-2 rounded-lg border px-3 py-2 text-left transition",
-                active === s.id
-                  ? "border-cyan-500/60 bg-cyan-500/[0.07]"
-                  : "border-slate-800 bg-[#070b12] hover:border-slate-600",
-              )}
-            >
-              <span className="flex items-center gap-2 text-[12px] font-semibold text-slate-200">
-                <Badge tone={TONES[s.tone]} className="font-mono text-[9px]">
-                  {s.tone === "violet" ? "CRC" : s.tone === "green" ? "OK" : s.tone === "amber" ? "ARQ" : "MAX"}
-                </Badge>
-                {s.label}
-              </span>
-              <span className="truncate text-right text-[11px] text-slate-500">
-                {s.expected}
-              </span>
-            </button>
-          ))}
+        {/* Manual Sliders & Toggles */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Packet Loss Simulation */}
+          <div className="rounded-2xl border-2 border-slate-200 bg-slate-50/60 p-5 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <ShieldAlert size={18} className="text-orange-600" />
+                <span className="text-xs sm:text-sm font-extrabold uppercase text-slate-900">
+                  Simulated Packet Drop
+                </span>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={lossOn}
+                  onChange={(e) => setLossOn(e.target.checked)}
+                  className="sr-only peer"
+                />
+                <div className="w-11 h-6 bg-slate-200 peer-focus:outline-hidden rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-orange-600"></div>
+              </label>
+            </div>
+
+            <div className="space-y-1.5">
+              <div className="flex justify-between text-xs text-slate-600 font-bold">
+                <span>Loss Rate Probability:</span>
+                <span className="text-orange-700 font-extrabold">{(lossProb * 100).toFixed(0)}%</span>
+              </div>
+              <input
+                type="range"
+                min="0.01"
+                max="0.9"
+                step="0.01"
+                disabled={!lossOn}
+                value={lossProb}
+                onChange={(e) => setLossProb(parseFloat(e.target.value))}
+                className="w-full accent-orange-600 cursor-pointer"
+              />
+            </div>
+          </div>
+
+          {/* CRC Bitflip Corruption Simulation */}
+          <div className="rounded-2xl border-2 border-slate-200 bg-slate-50/60 p-5 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Zap size={18} className="text-teal-700" />
+                <span className="text-xs sm:text-sm font-extrabold uppercase text-slate-900">
+                  Payload Bitflip Corruption
+                </span>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={corruptOn}
+                  onChange={(e) => setCorruptOn(e.target.checked)}
+                  className="sr-only peer"
+                />
+                <div className="w-11 h-6 bg-slate-200 peer-focus:outline-hidden rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-teal-700"></div>
+              </label>
+            </div>
+
+            <div className="space-y-1.5">
+              <div className="flex justify-between text-xs text-slate-600 font-bold">
+                <span>Corruption Probability:</span>
+                <span className="text-teal-800 font-extrabold">{(corruptProb * 100).toFixed(0)}%</span>
+              </div>
+              <input
+                type="range"
+                min="0.01"
+                max="0.5"
+                step="0.01"
+                disabled={!corruptOn}
+                value={corruptProb}
+                onChange={(e) => setCorruptProb(parseFloat(e.target.value))}
+                className="w-full accent-teal-700 cursor-pointer"
+              />
+            </div>
+          </div>
         </div>
 
-        <div className="mt-3 flex items-center gap-2">
+        {/* Buttons for Applying and Running Tests */}
+        <div className="flex flex-col sm:flex-row gap-3 pt-2">
           <button
             onClick={() => onApply(cfg())}
             disabled={busy}
-            className="rounded-md border border-slate-700 bg-slate-800/60 px-3 py-2 text-[12px] font-semibold text-slate-200 transition hover:bg-slate-700/60 disabled:opacity-50"
+            className="flex-1 rounded-xl border-2 border-slate-300 bg-white py-3 text-xs sm:text-sm font-extrabold uppercase hover:border-slate-400 hover:bg-slate-50 transition-colors shadow-xs"
           >
-            Apply
+            Apply Fault Parameters
           </button>
           <button
             onClick={() => onRunTest(cfg())}
             disabled={busy || !hasFile || !serverRunning || transferring}
-            title={
-              !serverRunning
-                ? "start the UDP receiver first"
-                : !hasFile
-                  ? "select a file first"
-                  : "apply the selected faults, then start"
-            }
-            className={cn(
-              "inline-flex items-center gap-1.5 rounded-md border border-emerald-500/50",
-              "bg-emerald-500/15 px-3 py-2 text-[12px] font-semibold text-emerald-300",
-              "transition hover:bg-emerald-500/25 disabled:cursor-not-allowed disabled:opacity-40",
-            )}
+            className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-orange-600 text-white py-3 text-xs sm:text-sm font-extrabold uppercase hover:bg-orange-500 transition-colors shadow-md shadow-orange-600/25 disabled:opacity-50"
           >
-            <Play size={13} /> Run Test
+            <Play size={16} className="fill-current stroke-none" />
+            <span>Apply &amp; Run Test Transfer</span>
           </button>
-          <span className="ml-auto text-right text-[10px] leading-tight text-slate-600">
-            Simulations run inside Python on real UDP packets
-          </span>
         </div>
       </div>
     </Panel>

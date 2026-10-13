@@ -1,45 +1,45 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { LayoutList, SplitSquareVertical, Table, Terminal } from "lucide-react";
-import { Badge, Panel, PanelHeader } from "@/components/ui";
+import { LayoutList, Terminal } from "lucide-react";
+import { Panel, PanelHeader } from "@/components/ui";
 import type { FeedLine, PacketEntry, PacketStatus } from "@/lib/types";
 
 function getStatusBadge(status: PacketStatus, retries: number) {
   switch (status) {
     case "ACKED":
       return (
-        <span className="inline-flex items-center gap-1 border border-green-500 bg-green-500/20 px-2 py-0.5 text-[11px] font-black text-green-400">
+        <span className="rounded-md border border-emerald-300 bg-emerald-50 text-emerald-900 px-2.5 py-0.5 text-xs font-extrabold font-mono">
           ✓ ACKED
         </span>
       );
     case "RETRANSMITTED":
       return (
-        <span className="inline-flex items-center gap-1 border border-amber-500 bg-amber-500/20 px-2 py-0.5 text-[11px] font-black text-amber-400">
+        <span className="rounded-md border border-orange-300 bg-orange-50 text-orange-950 px-2.5 py-0.5 text-xs font-extrabold font-mono">
           ↻ RETRIED ({retries})
         </span>
       );
     case "TIMEOUT":
       return (
-        <span className="inline-flex items-center gap-1 border border-red-500 bg-red-500/20 px-2 py-0.5 text-[11px] font-black text-red-400">
+        <span className="rounded-md border border-rose-300 bg-rose-50 text-rose-950 px-2.5 py-0.5 text-xs font-extrabold font-mono">
           ✕ TIMEOUT
         </span>
       );
     case "SENT":
       return (
-        <span className="inline-flex items-center gap-1 border border-cyan-500 bg-cyan-500/20 px-2 py-0.5 text-[11px] font-black text-cyan-300">
+        <span className="rounded-md border border-teal-300 bg-teal-50 text-teal-950 px-2.5 py-0.5 text-xs font-extrabold font-mono">
           → SENT
         </span>
       );
     case "WAITING":
       return (
-        <span className="inline-flex items-center gap-1 border border-cyan-500/50 bg-cyan-950/40 px-2 py-0.5 text-[11px] font-bold text-cyan-400">
+        <span className="rounded-md border border-slate-300 bg-slate-100 text-slate-700 px-2.5 py-0.5 text-xs font-extrabold font-mono">
           … WAITING
         </span>
       );
     case "FAILED":
       return (
-        <span className="inline-flex items-center gap-1 border border-red-600 bg-red-600/30 px-2 py-0.5 text-[11px] font-black text-red-300">
+        <span className="rounded-md border border-rose-400 bg-rose-100 text-rose-950 px-2.5 py-0.5 text-xs font-extrabold font-mono">
           ✕ FAILED
         </span>
       );
@@ -103,197 +103,150 @@ export function PacketMonitor({
   }, [feed, view]);
 
   return (
-    <Panel>
+    <Panel className="overflow-hidden">
       <PanelHeader
-        title="PACKET MONITOR"
-        icon={<LayoutList size={15} />}
+        title="Transmission Frame Register & Physical Trace Monitor"
+        badgeText="DATAGRAM LOG"
+        icon={<LayoutList size={20} className="stroke-[2.5]" />}
         right={
           <div className="flex items-center gap-2">
-            {/* View switcher buttons */}
-            <div className="flex border-2 border-neutral-700 bg-neutral-900 font-mono text-[11px]">
+            <div className="flex rounded-xl border-2 border-slate-200 bg-slate-100 p-1 font-mono text-xs">
               <button
                 onClick={() => setView("table")}
-                className={`flex items-center gap-1.5 px-3 py-1 font-bold uppercase transition ${
+                className={`rounded-lg px-3 py-1 font-extrabold transition-all ${
                   view === "table"
-                    ? "bg-cyan-500 text-black font-black"
-                    : "text-neutral-400 hover:text-white"
+                    ? "bg-white text-slate-900 shadow-xs"
+                    : "text-slate-600 hover:text-slate-900"
                 }`}
               >
-                <Table size={12} />
-                FRAME TABLE ({packets.length})
-              </button>
-              <button
-                onClick={() => setView("both")}
-                className={`flex items-center gap-1.5 border-l-2 border-neutral-700 px-3 py-1 font-bold uppercase transition ${
-                  view === "both"
-                    ? "bg-cyan-500 text-black font-black"
-                    : "text-neutral-400 hover:text-white"
-                }`}
-              >
-                <SplitSquareVertical size={12} />
-                SPLIT VIEW
+                FRAME TABLE
               </button>
               <button
                 onClick={() => setView("trace")}
-                className={`flex items-center gap-1.5 border-l-2 border-neutral-700 px-3 py-1 font-bold uppercase transition ${
+                className={`rounded-lg px-3 py-1 font-extrabold transition-all ${
                   view === "trace"
-                    ? "bg-cyan-500 text-black font-black"
-                    : "text-neutral-400 hover:text-white"
+                    ? "bg-white text-slate-900 shadow-xs"
+                    : "text-slate-600 hover:text-slate-900"
                 }`}
               >
-                <Terminal size={12} />
-                TRACE ({feed.length})
+                RAW STREAM
+              </button>
+              <button
+                onClick={() => setView("both")}
+                className={`rounded-lg px-3 py-1 font-extrabold transition-all ${
+                  view === "both"
+                    ? "bg-white text-slate-900 shadow-xs"
+                    : "text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                SPLIT VIEW
               </button>
             </div>
-            <Badge tone="cyan" className="hidden sm:inline-flex font-mono text-[10px]">
-              100% WIDTH
-            </Badge>
+            <span className="hidden sm:inline-block rounded-lg bg-teal-50 border border-teal-200 px-3 py-1 text-xs font-mono font-extrabold text-teal-900">
+              {packets.length} FRAMES
+            </span>
           </div>
         }
       />
 
-      <div className="w-full">
-        {/* TRANSMISSION FRAME TABLE (Takes full 100% width) */}
+      <div
+        className={`grid ${
+          view === "both" ? "grid-cols-1 lg:grid-cols-2 divide-y-2 lg:divide-y-0 lg:divide-x-2 divide-slate-100" : "grid-cols-1"
+        }`}
+      >
+        {/* Table View */}
         {(view === "table" || view === "both") && (
-          <div className="w-full">
-            <div className="flex items-center justify-between border-b-2 border-neutral-700 bg-neutral-950 px-4 py-2 font-mono text-[11px] font-black uppercase tracking-wider text-neutral-300">
-              <span>TRANSMISSION FRAME TABLE (STOP-AND-WAIT ARQ)</span>
-              <span className="text-neutral-500 text-[10px]">SHOWING LAST {rows.length} FRAMES</span>
+          <div className="flex flex-col font-mono">
+            {/* Table Header */}
+            <div className="grid grid-cols-12 bg-slate-100/90 border-b-2 border-slate-200 px-4 py-3 text-xs sm:text-sm font-extrabold text-slate-700 uppercase tracking-wide">
+              <div className="col-span-2">SEQ</div>
+              <div className="col-span-3">STATUS</div>
+              <div className="col-span-2">SIZE</div>
+              <div className="col-span-2">RETRIES</div>
+              <div className="col-span-3 text-right">TYPE / RTT</div>
             </div>
 
-            <div className="w-full overflow-hidden">
-              {/* Header table with 100% full width and fixed column percentages */}
-              <table className="w-full table-fixed text-left font-mono text-xs">
-                <thead>
-                  <tr className="border-b-2 border-neutral-700 bg-neutral-900 text-[11px] font-black uppercase tracking-widest text-neutral-300">
-                    <th className="w-[15%] px-4 py-2.5 text-right">SEQUENCE</th>
-                    <th className="w-[15%] px-4 py-2.5">PACKET TYPE</th>
-                    <th className="w-[20%] px-4 py-2.5 text-right">PAYLOAD SIZE</th>
-                    <th className="w-[30%] px-4 py-2.5">TRANSMISSION STATUS</th>
-                    <th className="w-[20%] px-4 py-2.5 text-right">RETRY ATTEMPTS</th>
-                  </tr>
-                </thead>
-              </table>
-
-              {/* Scrollable Body table with exact matching column widths */}
-              <div
-                ref={bodyRef}
-                onScroll={handleBodyScroll}
-                onWheel={handleBodyWheel}
-                className={`${view === "both" ? "h-64" : "h-80"} w-full overflow-y-auto bg-black`}
-              >
-                <table className="w-full table-fixed text-left font-mono text-xs">
-                  <tbody className="divide-y divide-neutral-800">
-                    {rows.length === 0 ? (
-                      <tr>
-                        <td
-                          colSpan={5}
-                          className="px-4 py-16 text-center text-neutral-600 font-bold uppercase tracking-wider"
-                        >
-                          NO PACKETS TRANSMITTED YET — START A TRANSFER TO POPULATE TABLE
-                        </td>
-                      </tr>
-                    ) : (
-                      rows.map((p) => (
-                        <tr
-                          key={`${p.seq}-${p.status}-${p.retries}`}
-                          className={`transition-colors ${
-                            p.status === "TIMEOUT" || p.status === "FAILED"
-                              ? "bg-red-950/30"
-                              : p.status === "RETRANSMITTED"
-                              ? "bg-amber-950/20"
-                              : "hover:bg-neutral-900/60"
-                          }`}
-                        >
-                          <td className="w-[15%] px-4 py-2 text-right font-black text-cyan-400">
-                            #{p.seq}
-                          </td>
-                          <td className="w-[15%] px-4 py-2 font-bold text-neutral-200">
-                            {p.type}
-                          </td>
-                          <td className="w-[20%] px-4 py-2 text-right text-neutral-300">
-                            {p.size} B
-                          </td>
-                          <td className="w-[30%] px-4 py-2">
-                            {getStatusBadge(p.status, p.retries)}
-                          </td>
-                          <td
-                            className={`w-[20%] px-4 py-2 text-right font-black ${
-                              p.retries > 0 ? "text-amber-400" : "text-neutral-500"
-                            }`}
-                          >
-                            {p.retries}
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
+            {/* Table Rows Body */}
+            <div
+              ref={bodyRef}
+              onScroll={handleBodyScroll}
+              onWheel={handleBodyWheel}
+              className="h-80 overflow-y-auto divide-y divide-slate-100 text-xs sm:text-sm bg-white"
+            >
+              {rows.length === 0 ? (
+                <div className="p-8 text-center text-slate-400 italic">
+                  No transmission frames sent yet. Start transfer to observe ARQ datagram log.
+                </div>
+              ) : (
+                rows.map((p) => (
+                  <div
+                    key={p.seq}
+                    className="grid grid-cols-12 items-center px-4 py-2.5 hover:bg-slate-50 transition-colors"
+                  >
+                    <div className="col-span-2 font-black text-slate-900 font-tabular">
+                      #{p.seq}
+                    </div>
+                    <div className="col-span-3">{getStatusBadge(p.status, p.retries)}</div>
+                    <div className="col-span-2 font-medium text-slate-600 font-tabular">
+                      {p.size} B
+                    </div>
+                    <div className="col-span-2 font-medium text-slate-600 font-tabular">
+                      {p.retries > 0 ? (
+                        <span className="font-extrabold text-orange-600">×{p.retries}</span>
+                      ) : (
+                        "0"
+                      )}
+                    </div>
+                    <div className="col-span-3 text-right font-mono text-xs text-slate-500 font-tabular truncate">
+                      {p.type} {p.rtt_ms != null ? `(${p.rtt_ms.toFixed(1)}ms)` : ""}
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
           </div>
         )}
 
-        {/* LIVE EVENT TRACE (Full 100% width) */}
+        {/* Trace Stream View */}
         {(view === "trace" || view === "both") && (
-          <div className={`w-full ${view === "both" ? "border-t-2 border-neutral-700" : ""}`}>
-            <div className="flex items-center justify-between border-b-2 border-neutral-700 bg-neutral-950 px-4 py-2 text-[11px] font-black uppercase tracking-wider text-neutral-300">
+          <div className="flex flex-col font-mono bg-slate-50/50">
+            <div className="bg-slate-100/90 border-b-2 border-slate-200 px-4 py-3 text-xs sm:text-sm font-extrabold text-slate-700 uppercase tracking-wide flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <Terminal size={14} className="text-cyan-400" />
-                <span>LIVE EVENT TRACE CONSOLE (FULL-WIDTH)</span>
+                <Terminal size={15} className="text-teal-700" />
+                <span>RAW SOCKET EVENT STREAM</span>
               </div>
-              <span className="font-mono text-[10px] text-neutral-500">
-                {feed.length} EVENTS RECORDED
-              </span>
+              <span className="text-xs text-slate-500 font-semibold">{feed.length} EVENTS</span>
             </div>
 
             <div
               ref={traceRef}
               onScroll={handleTraceScroll}
               onWheel={handleTraceWheel}
-              className={`${view === "both" ? "h-48" : "h-80"} w-full overflow-y-auto p-4 font-mono text-[12px] leading-6 space-y-1.5 bg-black`}
+              className="h-80 overflow-y-auto p-4 space-y-1.5 text-xs sm:text-sm bg-white text-slate-700 font-mono shadow-inner"
             >
               {feed.length === 0 ? (
-                <p className="text-neutral-600 italic">
-                  Awaiting socket events...
-                </p>
+                <div className="p-8 text-center text-slate-400 italic">
+                  Event log is empty. Socket events will appear here in real time.
+                </div>
               ) : (
-                feed.map((line, i) => {
-                  const isLoss = /lost|timeout/i.test(line.text);
-                  const isDuplicate = /duplicate/i.test(line.text);
-                  const isRetransmit = /retransmit/i.test(line.text);
-                  const isAck = /ack/i.test(line.text);
-                  const isServerData = /server <- data/i.test(line.text);
-                  const isSent = /sent|start/i.test(line.text);
-
-                  return (
-                    <div
-                      key={`${line.t}-${i}`}
-                      className={`flex items-start gap-3 border-l-2 pl-3 ${
-                        isLoss
-                          ? "border-red-500 text-red-400 bg-red-950/10 font-bold"
-                          : isDuplicate
-                          ? "border-amber-500 text-amber-300 bg-amber-950/20 font-bold"
-                          : isRetransmit
-                          ? "border-amber-500 text-amber-400 bg-amber-950/10 font-bold"
-                          : isAck
-                          ? "border-green-500 text-green-400 bg-green-950/10"
-                          : isServerData
-                          ? "border-emerald-500 text-emerald-300 bg-emerald-950/10"
-                          : isSent
-                          ? "border-cyan-500 text-cyan-300 bg-cyan-950/10"
-                          : "border-neutral-700 text-neutral-300"
-                      }`}
-                    >
-                      <span className="text-[11px] text-neutral-600 font-bold shrink-0">
-                        [{new Date(line.t * 1000).toLocaleTimeString(undefined, {
-                          hour12: false,
-                        })}]
-                      </span>
-                      <span className="font-bold">{line.text}</span>
-                    </div>
-                  );
-                })
+                feed.map((line, i) => (
+                  <div key={`${line.t}-${i}`} className="leading-relaxed">
+                    <span className="text-slate-400 mr-2 select-none">
+                      [{new Date(line.t * 1000).toLocaleTimeString(undefined, { hour12: false })}]
+                    </span>
+                    <span className={
+                      /lost|timeout/i.test(line.text)
+                        ? "text-rose-700 font-bold bg-rose-50 px-1 py-0.5 rounded"
+                        : /retransmit/i.test(line.text)
+                        ? "text-orange-700 font-bold"
+                        : /ack/i.test(line.text)
+                        ? "text-emerald-700 font-bold"
+                        : "text-slate-800"
+                    }>
+                      {line.text}
+                    </span>
+                  </div>
+                ))
               )}
             </div>
           </div>

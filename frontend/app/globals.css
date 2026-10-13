@@ -1,108 +1,125 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800;900&family=JetBrains+Mono:wght@500;600;700;800&family=Space+Grotesk:wght@600;700;800&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 :root {
-  --background: #0a0a0a;
-  --foreground: #e5e5e5;
-  --brutal-border: #2a2a2a;
-  --brutal-shadow: 4px 4px 0px #000;
-  --brutal-shadow-sm: 2px 2px 0px #000;
-  --accent-cyan: #06b6d4;
-  --accent-green: #22c55e;
-  --accent-amber: #f59e0b;
-  --accent-red: #ef4444;
+  /* Warm pleasant canvas */
+  --bg-app: #f8fafc;
+  --bg-card: #ffffff;
+  --bg-subtle: #f1f5f9;
+  
+  /* Primary Teal & Orange Brand */
+  --teal-primary: #0f766e;
+  --teal-vibrant: #0d9488;
+  --teal-light: #f0fdfa;
+  --orange-primary: #ea580c;
+  --orange-light: #fff7ed;
 }
 
-html,
-body {
-  color: var(--foreground);
-  background: var(--background);
+html, body {
+  background-color: #f8fafc !important;
+  color: #0f172a !important;
+  font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  min-height: 100vh;
 }
 
-body {
-  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
-  background-image:
-    linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px);
+/* Subtle pleasant micro-dot pattern across the full screen */
+.pleasant-pattern {
+  background-color: #f8fafc;
+  background-image: radial-gradient(rgba(15, 118, 110, 0.08) 1.5px, transparent 1.5px);
   background-size: 24px 24px;
 }
 
-/* ---- mono helpers --------------------------------------------------- */
-.font-mono-num {
+.font-mono-code {
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.font-display {
+  font-family: 'Space Grotesk', -apple-system, sans-serif;
+}
+
+.font-tabular {
   font-variant-numeric: tabular-nums;
 }
 
-/* ---- brutalist scrollbars ------------------------------------------- */
+/* Clean, modern scrollbars */
 * {
   scrollbar-width: thin;
-  scrollbar-color: #333 transparent;
+  scrollbar-color: #cbd5e1 transparent;
 }
 *::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 7px;
+  height: 7px;
 }
 *::-webkit-scrollbar-thumb {
-  background: #333;
-  border-radius: 0;
+  background: #cbd5e1;
+  border-radius: 9999px;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
 }
 
-/* ---- status dot pulse ----------------------------------------------- */
-@keyframes fs-pulse {
-  0% {
-    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.6);
+/* Marching dashes on wire conduit */
+@keyframes wire-dash-forward {
+  to {
+    stroke-dashoffset: -36;
   }
-  70% {
-    box-shadow: 0 0 0 8px rgba(34, 197, 94, 0);
+}
+.animate-wire-forward {
+  animation: wire-dash-forward 0.75s linear infinite;
+}
+
+@keyframes wire-dash-backward {
+  to {
+    stroke-dashoffset: 36;
+  }
+}
+.animate-wire-backward {
+  animation: wire-dash-backward 0.75s linear infinite;
+}
+
+/* Concentric radar beacon for active transmission */
+@keyframes radar-beacon {
+  0% {
+    transform: scale(0.85);
+    opacity: 0.8;
   }
   100% {
-    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0);
+    transform: scale(2.2);
+    opacity: 0;
   }
 }
-.status-pulse {
-  animation: fs-pulse 1.6s ease-out infinite;
+.animate-radar-beacon {
+  animation: radar-beacon 2s cubic-bezier(0, 0.6, 0.4, 1) infinite;
 }
 
-/* ---- packet data flow animation ------------------------------------- */
-@keyframes fs-flow-right {
-  0% { transform: translateX(-8px); opacity: 0.3; }
-  50% { opacity: 1; }
-  100% { transform: translateX(8px); opacity: 0.3; }
+/* Shimmer progress effect */
+@keyframes progress-shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
 }
-@keyframes fs-flow-left {
-  0% { transform: translateX(8px); opacity: 0.3; }
-  50% { opacity: 1; }
-  100% { transform: translateX(-8px); opacity: 0.3; }
-}
-.flow-data {
-  animation: fs-flow-right 1s ease-in-out infinite;
-}
-.flow-ack {
-  animation: fs-flow-left 1s ease-in-out infinite;
+.animate-shimmer {
+  background-size: 200% 100%;
+  animation: progress-shimmer 2s linear infinite;
 }
 
-/* ---- blink for timeout/loss ----------------------------------------- */
-@keyframes fs-blink {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.3; }
+/* Warning alert pulse */
+@keyframes alert-pulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.5;
+    transform: scale(0.98);
+  }
 }
-.blink-warn {
-  animation: fs-blink 0.8s ease-in-out infinite;
-}
-
-/* ---- brutalist panel ------------------------------------------------ */
-.brutal-panel {
-  background: #111;
-  border: 2px solid #2a2a2a;
-  box-shadow: 4px 4px 0px #000;
-}
-.brutal-panel-sm {
-  background: #111;
-  border: 2px solid #2a2a2a;
-  box-shadow: 2px 2px 0px #000;
-}
-
-/* ---- flow active (legacy compat) ------------------------------------ */
-.flow-active {
-  animation: fs-flow-right 0.9s ease-in-out infinite;
+.animate-alert-pulse {
+  animation: alert-pulse 0.9s ease-in-out infinite;
 }
