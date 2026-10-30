@@ -2,7 +2,7 @@
 
 import {
   useEffect,
-  useReducer,
+  useMemo,
   useRef,
   useState,
   type ReactNode,
@@ -79,8 +79,24 @@ export function TopologyCanvas({
     scale: number;
     moved: boolean;
   } | null>(null);
-  const [, force] = useReducer((n: number) => n + 1, 0);
-  const graph = buildCanvasGraph(topology, status);
+  // P1-7: layout metrics live in state (ResizeObserver-driven) so render never
+  // calls getBoundingClientRect — no forced layout on every render/pan frame.
+  const [layout, setLayout] = useState<{
+    scale: number;
+    ox: number;
+    oy: number;
+    /** svg rect offset inside the container (for the inspector anchor). */
+    dx: number;
+    dy: number;
+    width: number;
+    height: number;
+  } | null>(null);
+  // P1-7: the graph is only rebuilt when the polled snapshots change — not on
+  // every pointer-move frame while panning (setView re-renders ~60×/s).
+  const graph = useMemo(
+    () => buildCanvasGraph(topology, status),
+    [topology, status],
+  );
 
   const sched = status?.scheduler ?? null;
   // lane health only while the source-side scheduler is live on the tri lanes
@@ -88,17 +104,20 @@ export function TopologyCanvas({
     sched?.enabled && sched.lanes.length > 1 ? sched.lanes : null;
 
   // path colour language: green optimal / blue candidate / red restricted
-  const states = laneStates(sched, graph);
+  const states = useMemo(() => laneStates(sched, graph), [sched, graph]);
   // tri routers inherit their lane's state (lanes are node-disjoint)
-  const nodeState: Record<string, PathState> = {};
-  if (graph.mode === "tri") {
-    graph.paths.forEach((ids, i) =>
-      ids.forEach((id) => {
-        if (id !== graph.source && id !== graph.dest && !(id in nodeState))
-          nodeState[id] = states[i] ?? "candidate";
-      }),
-    );
-  }
+  const nodeState = useMemo(() => {
+    const map: Record<string, PathState> = {};
+    if (graph.mode === "tri") {
+      graph.paths.forEach((ids, i) =>
+        ids.forEach((id) => {
+          if (id !== graph.source && id !== graph.dest && !(id in map))
+            map[id] = states[i] ?? "candidate";
+        }),
+      );
+    }
+    return map;
+  }, [graph, states]);
 
   // transient flag/recover banner (top-right of the canvas)
   const [notice, setNotice] = useState<{
@@ -147,11 +166,41 @@ export function TopologyCanvas({
     return { r, scale, ox, oy };
   };
 
-  // re-render on canvas resize so the inspector anchor stays put
+  // Measure the canvas into `layout` state (resize + mount): render and the
+  // inspector anchor then work off plain numbers, never a layout read.
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
-    const ro = new ResizeObserver(() => force());
+    const measure = () => {
+      const svg = svgRef.current;
+      const cr = el.getBoundingClientRect();
+      if (!svg) return;
+      const r = svg.getBoundingClientRect();
+      const scale = Math.min(r.width / VIEWBOX.w, r.height / VIEWBOX.h);
+      const next = {
+        scale,
+        ox: (r.width - VIEWBOX.w * scale) / 2,
+        oy: (r.height - VIEWBOX.h * scale) / 2,
+        dx: r.left - cr.left,
+        dy: r.top - cr.top,
+        width: cr.width,
+        height: cr.height,
+      };
+      setLayout((prev) =>
+        prev &&
+        prev.scale === next.scale &&
+        prev.ox === next.ox &&
+        prev.oy === next.oy &&
+        prev.dx === next.dx &&
+        prev.dy === next.dy &&
+        prev.width === next.width &&
+        prev.height === next.height
+          ? prev
+          : next,
+      );
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
@@ -228,21 +277,19 @@ export function TopologyCanvas({
     if (!p.moved) onSelectNode(null);
   };
 
-  // selected node anchor in container coordinates (viewBox → screen + view)
+  // selected node anchor in container coordinates (viewBox → screen + view).
+  // Off `layout` state — no getBoundingClientRect during render (P1-7).
   let anchor: { x: number; y: number } | null = null;
   let bounds = { width: 0, height: 0 };
-  const container = containerRef.current;
-  const metrics = svgMetrics();
-  if (container && metrics) {
-    const cr = container.getBoundingClientRect();
-    bounds = { width: cr.width, height: cr.height };
+  if (layout) {
+    bounds = { width: layout.width, height: layout.height };
     const node = selectedNode ? graph.byId[selectedNode] : null;
     if (node) {
       const gx = node.x * view.k + view.tx;
       const gy = node.y * view.k + view.ty;
       anchor = {
-        x: metrics.r.left - cr.left + metrics.ox + gx * metrics.scale,
-        y: metrics.r.top - cr.top + metrics.oy + gy * metrics.scale,
+        x: layout.dx + layout.ox + gx * layout.scale,
+        y: layout.dy + layout.oy + gy * layout.scale,
       };
     }
   }
@@ -394,8 +441,10 @@ export function TopologyCanvas({
           if (e.target === e.currentTarget)
             setView({ tx: 0, ty: 0, k: 1 });
         }}
-        role="img"
-        aria-label="Topology canvas"
+        // NOT role="img": that tells AT the whole canvas is one picture and
+        // hides the interactive nodes. It is a group of focusable controls.
+        role="group"
+        aria-label="Topology canvas — pan with the pointer, inspect a node"
       >
         <g transform={`translate(${view.tx},${view.ty}) scale(${view.k})`}>
           {/* LINKS */}
@@ -497,6 +546,20 @@ export function TopologyCanvas({
               <g
                 key={node.id}
                 className="cursor-pointer"
+                tabIndex={0}
+                role="button"
+                aria-label={`Node ${node.label}, ${
+                  node.up ? "up" : "down"
+                }, ${selected ? "selected" : "not selected"}`}
+                aria-pressed={selected}
+                onKeyDown={(e) => {
+                  // keyboard parity with the click handler (P1-12)
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    onSelectNode(selected ? null : node.id);
+                  }
+                }}
                 onPointerDown={(e) => e.stopPropagation()}
                 onDoubleClick={(e) => e.stopPropagation()}
                 onClick={(e) => {
@@ -564,6 +627,7 @@ export function TopologyCanvas({
         <button
           type="button"
           title="Zoom out"
+          aria-label="Zoom out"
           onClick={() => zoomBy(1 / 1.3)}
           className="flex h-7 w-7 cursor-pointer items-center justify-center border-2 border-neutral-700 bg-neutral-900/95 text-neutral-400 shadow-[2px_2px_0px_#000] transition hover:border-cyan-500/60 hover:text-cyan-300"
         >
@@ -572,6 +636,7 @@ export function TopologyCanvas({
         <button
           type="button"
           title="Reset view (double-click background does this too)"
+          aria-label="Reset canvas view"
           onClick={() => setView({ tx: 0, ty: 0, k: 1 })}
           className="flex h-7 w-7 cursor-pointer items-center justify-center border-2 border-neutral-700 bg-neutral-900/95 text-neutral-400 shadow-[2px_2px_0px_#000] transition hover:border-cyan-500/60 hover:text-cyan-300"
         >
@@ -580,6 +645,7 @@ export function TopologyCanvas({
         <button
           type="button"
           title="Zoom in"
+          aria-label="Zoom in"
           onClick={() => zoomBy(1.3)}
           className="flex h-7 w-7 cursor-pointer items-center justify-center border-2 border-neutral-700 bg-neutral-900/95 text-neutral-400 shadow-[2px_2px_0px_#000] transition hover:border-cyan-500/60 hover:text-cyan-300"
         >

@@ -51,3 +51,17 @@ body {
   animation: fs-pulse 1.6s ease-out infinite;
 }
 
+/* ---- reduced motion (P1-12) ------------------------------------------- */
+/* The packet canvas honours it via usePrefersReducedMotion (slow-mo ¼×);
+   this kills the CSS/SML pulses for the same audience. */
+@media (prefers-reduced-motion: reduce) {
+  .status-pulse {
+    animation: none;
+  }
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+  }
+}
+

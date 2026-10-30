@@ -308,6 +308,7 @@ export function NodeInspector({
             <button
               type="button"
               title="Refresh log now"
+              aria-label="Refresh node log now"
               onClick={() => void pullLogs()}
               className="cursor-pointer text-neutral-500 transition hover:text-cyan-300"
             >
@@ -373,6 +374,7 @@ export function NodeInspector({
               type="button"
               onClick={onClose}
               title="Close (Esc)"
+              aria-label="Close node inspector"
               className="cursor-pointer text-neutral-500 transition hover:text-white"
             >
               <X size={14} />

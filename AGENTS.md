@@ -150,6 +150,43 @@ Strict format for each entry (all three fields):
 
 ### Entries
 
+### 2026-10-30 — Atiksh Chawla — opencode mimo-v2.6-flash-free (Packages B + C, partial D-free checkpoint)
+
+- **Done**: **Package B (frontend perf)** — P1-7 memoized `buildCanvasMetrics`
+  in `lib/canvas.ts` + call-site updates; P1-8/P2-24 `useStatusPolling`
+  rewrite (structural `deepEqual`, no state write on no-op ticks, cursor
+  kept in a ref); P1-14 event-batched `PacketLayer` ingest. **Package C
+  (tests + a11y)** — P1-11 vitest pinned `^2` (2.1.9; v5 fails ERESOLVE vs
+  `@types/node@^20`), `vitest.config.ts`, 4 pure-lib test files
+  (`canvas`/`logClassify`/`format`/`anim`) = **26/26 pass**; P1-23 a11y:
+  canvas `role="group"` + node `tabIndex`/`role="button"`/`aria-pressed`/
+  Enter-Space, control `aria-label`s (TopBar/NodeInspector/TransferDock),
+  `hooks/usePrefersReducedMotion.ts` (stored `fastshare:anim-speed` wins,
+  else ¼×), `globals.css` reduced-motion block. **P2-23 (first half)** —
+  `transfer/topology/manager.py` new `_lifecycle` RLock making
+  `set_preset`/`start_all`/`stop_all`/`prepare_transfer` atomic vs each
+  other (audit §2.2 #3: concurrent preset switch could KeyError inside
+  `start_all`'s `self._forwarders[node.id]` or leave ghost forwarders from
+  the abandoned graph); split `stop_all`→`_stop_all_unlocked`,
+  `start_all`→`_start_all_locked`, `prepare_transfer`→
+  `_prepare_transfer_locked` so `_ensure_handles` (which holds
+  `_handles_guard`) never re-enters `_lifecycle` — lock order stays
+  `_lifecycle` → `_lock`/`_handles_guard`; receiver rebind still holds no
+  `_lock` (module-docstring rule preserved). Gates: pytest **119 passed**,
+  `smoke_topology.ps1` **SMOKE PASS**, frontend strict-tsc / lint (2
+  pre-existing `spawnAck` warnings) / build / `npm run test` 26/26 all
+  green.
+- **Pending**: P2-23 second half — `tests/test_concurrency.py` (double-
+  start, preset-switch-during-start, poll responsiveness during spawn/stop)
+  not yet written (the lock fix landed ahead of its tests); P2-21 fixture
+  centralization not started; Package D (P1-13 RTT-adaptive timer,
+  P2-15…20) and P2-22 (mobile pinch-zoom/route picking) not started;
+  AGENTS.md work-log entries for the earlier B/C chunks are folded into
+  this entry; uncommitted working tree (user decides commits); manual
+  browser check never run.
+- **Planned**: Await user go-ahead — next: write `test_concurrency.py`,
+  then P2-21 dedup, then Package D + P2-22, re-running full gates each time.
+
 ### 2026-10-30 — Atiksh Chawla — opencode mimo-v2.6-flash-free (Package A backend reliability)
 
 - **Done**: Implemented Package A from `CODE_AUDIT.md` (P0-1..6 + P1-9/10),

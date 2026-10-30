@@ -5,6 +5,7 @@ import { AlertTriangle } from "lucide-react";
 import { NodeInspector } from "@/components/NodeInspector";
 import { PacketLayer } from "@/components/PacketLayer";
 import { ANIM_SPEEDS, PathSwitchHud } from "@/components/PathSwitchHud";
+import { usePrefersReducedMotion } from "@/hooks/usePrefersReducedMotion";
 import { PanelResizeHandle } from "@/components/PanelResizeHandle";
 import { RoutePicker } from "@/components/RoutePicker";
 import { SidePanel } from "@/components/SidePanel";
@@ -58,16 +59,24 @@ export default function Home() {
     dest: string;
   } | null>(null);
 
-  // packet-dot animation speed (slow-mo for demos), persisted
+  // packet-dot animation speed (slow-mo for demos), persisted.
+  // P1-12: users whose OS asks for reduced motion default to the slowest
+  // speed unless a stored choice exists (stored choice always wins).
+  const prefersReducedMotion = usePrefersReducedMotion();
   const [animSpeed, setAnimSpeed] = useState(1);
   useEffect(() => {
     try {
-      const v = Number(localStorage.getItem("fastshare:anim-speed"));
-      if ((ANIM_SPEEDS as readonly number[]).includes(v)) setAnimSpeed(v);
+      const raw = localStorage.getItem("fastshare:anim-speed");
+      const v = Number(raw);
+      if (raw !== null && (ANIM_SPEEDS as readonly number[]).includes(v)) {
+        setAnimSpeed(v);
+        return;
+      }
     } catch {
       /* storage unavailable */
     }
-  }, []);
+    if (prefersReducedMotion) setAnimSpeed(0.25);
+  }, [prefersReducedMotion]);
   const changeAnimSpeed = (v: number) => {
     setAnimSpeed(v);
     try {

@@ -40,6 +40,7 @@ export function TopBar({
           type="button"
           onClick={onOpenConfig}
           title="Settings"
+          aria-label="Settings"
           className="flex h-8 w-8 cursor-pointer items-center justify-center border-2 border-neutral-700 bg-neutral-800 text-neutral-400 transition hover:border-neutral-500 hover:text-white"
         >
           <Settings size={15} />
@@ -48,6 +49,7 @@ export function TopBar({
           type="button"
           onClick={onToggleLeft}
           title={leftOpen ? "Hide controls sidebar" : "Show controls sidebar"}
+          aria-label={leftOpen ? "Hide controls sidebar" : "Show controls sidebar"}
           className={`flex h-8 w-8 cursor-pointer items-center justify-center border-2 transition ${
             leftOpen
               ? "border-cyan-500/60 bg-cyan-500/10 text-cyan-300"
@@ -60,6 +62,7 @@ export function TopBar({
           type="button"
           onClick={onToggleRight}
           title={rightOpen ? "Hide telemetry sidebar" : "Show telemetry sidebar"}
+          aria-label={rightOpen ? "Hide telemetry sidebar" : "Show telemetry sidebar"}
           className={`flex h-8 w-8 cursor-pointer items-center justify-center border-2 transition ${
             rightOpen
               ? "border-cyan-500/60 bg-cyan-500/10 text-cyan-300"

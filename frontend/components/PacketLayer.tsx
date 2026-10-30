@@ -8,8 +8,8 @@ import {
   laneIds,
   lanePath,
   laneStates,
-  type CanvasGraph,
 } from "@/lib/canvas";
+import { buildTimings, posAlong, sum, type Polyline } from "@/lib/anim";
 import type { TopologySnapshot } from "@/lib/topology";
 import type { PacketEvent, Snapshot } from "@/lib/types";
 
@@ -40,9 +40,11 @@ import type { PacketEvent, Snapshot } from "@/lib/types";
  */
 
 type Point = { x: number; y: number };
-type Path = Point[];
+type Path = Polyline;
 
 interface Sprite {
+  /** Stable identity: survives splices so React never remounts by index. */
+  id: number;
   seq: number;
   retries: number;
   dir: "data" | "ack";
@@ -64,6 +66,8 @@ interface Sprite {
 }
 
 interface Blast {
+  /** Stable identity (same reason as Sprite.id). */
+  id: number;
   x: number;
   y: number;
   at: number;
@@ -74,52 +78,6 @@ const ACK_TOTAL = 700;
 const TIMEOUT_FADE = 600;
 const BLAST_FADE = 800;
 const TRAIL_STEPS = [50, 100, 150];
-
-function lerp(a: Point, b: Point, t: number): Point {
-  return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
-}
-
-function posAlong(path: Path, timings: number[], elapsed: number): Point | null {
-  if (path.length < 2 || timings.length === 0) return null;
-  let t = Math.max(0, elapsed);
-  for (let i = 0; i < timings.length; i++) {
-    const seg = timings[i];
-    if (t <= seg || i === timings.length - 1) {
-      const frac = seg <= 0 ? 1 : Math.min(1, t / seg);
-      return lerp(path[i], path[i + 1], frac);
-    }
-    t -= seg;
-  }
-  return null;
-}
-
-function sum(timings: number[]): number {
-  return timings.reduce((a, b) => a + b, 0);
-}
-
-/**
- * Per-segment durations proportional to each link's simulated latency,
- * normalized so the whole hop chain stays legible (700–900 ms).
- */
-function buildTimings(
-  graph: CanvasGraph,
-  ids: string[],
-  target: number,
-  reverse: boolean,
-): number[] {
-  const weights: number[] = [];
-  for (let i = 0; i < ids.length - 1; i++) {
-    const a = ids[i];
-    const b = ids[i + 1];
-    const link = graph.links.find(
-      (l) => (l.a === a && l.b === b) || (l.a === b && l.b === a),
-    );
-    weights.push(Math.max(1, link?.stats?.latency_ms ?? 10));
-  }
-  if (reverse) weights.reverse();
-  const totalWeight = weights.reduce((x, y) => x + y, 0) || 1;
-  return weights.map((w) => (w / totalWeight) * target);
-}
 
 export function PacketLayer({
   topology,
@@ -138,6 +96,8 @@ export function PacketLayer({
   const [, tick] = useReducer((n: number) => n + 1, 0);
   const spritesRef = useRef<Sprite[]>([]);
   const blastsRef = useRef<Blast[]>([]);
+  /** Monotonic id source: every sprite/blast keeps a stable React key. */
+  const nextIdRef = useRef(1);
   /** Highest event id already drawn — every transition renders exactly once. */
   const lastIdRef = useRef(0);
   const latestRef = useRef({ topology, status, events, speed });
@@ -154,6 +114,7 @@ export function PacketLayer({
     if (!revPts) return;
     const rev = [...revPts].reverse();
     spritesRef.current.push({
+      id: nextIdRef.current++,
       seq,
       retries,
       dir: "ack",
@@ -211,6 +172,7 @@ export function PacketLayer({
         return;
       const state = states[lane] ?? "candidate";
       sprites.push({
+        id: nextIdRef.current++,
         seq: spec.seq,
         retries: spec.retries,
         dir: "data",
@@ -260,7 +222,12 @@ export function PacketLayer({
               data.path[data.path.length - 1];
             data.phase = "timeout";
             data.timeoutAt = now;
-            blastsRef.current.push({ x: data.pos.x, y: data.pos.y, at: now });
+            blastsRef.current.push({
+              id: nextIdRef.current++,
+              x: data.pos.x,
+              y: data.pos.y,
+              at: now,
+            });
           }
           break;
         }
@@ -341,7 +308,7 @@ export function PacketLayer({
 
   return (
     <g className="pointer-events-none">
-      {sprites.map((s, i) => {
+      {sprites.map((s) => {
         const elapsed = now - s.startedAt;
         const isData = s.dir === "data";
 
@@ -379,7 +346,7 @@ export function PacketLayer({
             : null;
 
         return (
-          <g key={`${s.seq}-${s.dir}-${i}`} opacity={opacity}>
+          <g key={s.id} opacity={opacity}>
             {trail}
             <circle
               cx={x}
@@ -440,12 +407,12 @@ export function PacketLayer({
         );
       })}
 
-      {blastsRef.current.map((b, i) => {
+      {blastsRef.current.map((b) => {
         const age = now - b.at;
         if (age > BLAST_FADE * k) return null;
         return (
           <text
-            key={i}
+            key={b.id}
             x={b.x}
             y={b.y + 4}
             textAnchor="middle"

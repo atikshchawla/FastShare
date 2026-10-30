@@ -47,6 +47,15 @@ class TopologyManager:
         self.dest_id = preset.dest
         self.route: list[str] | None = None
         self._lock = threading.RLock()
+        # Node-lifecycle lock: serializes preset switches (set_preset stops
+        # the old handles and rebuilds) against start_all()/stop_all(), which
+        # otherwise iterate self.topology/self._forwarders and could KeyError
+        # or boot orphaned "ghost" forwarders (CODE_AUDIT.md 2.2 #3). Lock
+        # order is always _lifecycle -> _lock/_handles_guard, and the fast
+        # path of _ensure_handles takes NO lock so the 500 ms status poll
+        # never waits behind a boot. Forwarders never call back into either
+        # manager, so holding this across start/stop is deadlock-free.
+        self._lifecycle = threading.RLock()
         # Per-node overrides (latency / loss / corruption / enabled); they
         # persist for the process lifetime and win over the global config.
         self._node_overrides: dict[str, dict] = {}
@@ -111,7 +120,10 @@ class TopologyManager:
             if self._handles_mode == want and self._forwarders:
                 return
             if self._forwarders:
-                self.stop_all()
+                # NOT stop_all(): that takes _lifecycle, and this method is
+                # also reached without it (snapshot/node_config/...) which
+                # would invert the _lifecycle -> _handles_guard order.
+                self._stop_all_unlocked()
             if want[1]:
                 self._forwarders = {
                     node.id: ProcessHandle(node.id, node.host, node.port,
@@ -134,23 +146,30 @@ class TopologyManager:
         rebuilds them for the new graph, clears the active route and resets
         ``source``/``dest`` to the preset defaults. Raises ``KeyError`` for
         an unknown preset, ``ValueError`` while a transfer is running.
+
+        Atomic under ``_lifecycle``: start_all()/stop_all()/prepare_transfer
+        hold the same lock, so the swap + rebuild can never interleave with
+        a forwarder boot or route push (CODE_AUDIT.md 2.2 #3 — previously a
+        concurrent start_all() could KeyError on the swapped handle map or
+        leave orphaned "ghost" forwarders from the abandoned graph).
         """
-        try:
-            preset = PRESETS[name]
-        except KeyError:
-            raise KeyError(f"unknown topology preset: {name}") from None
-        if self._tm.transfer_status == "transferring":
-            raise ValueError("cannot switch preset while a transfer is running")
-        with self._lock:
-            if name == self.preset_name:
-                return {"ok": True, "preset": name,
-                        "source": self.source_id, "dest": self.dest_id}
-            self.preset_name = preset.id
-            self.topology = preset.topology
-            self.source_id = preset.source
-            self.dest_id = preset.dest
-            self.route = None
-        self._ensure_handles()      # stops old handles, builds the new ones
+        with self._lifecycle:
+            try:
+                preset = PRESETS[name]
+            except KeyError:
+                raise KeyError(f"unknown topology preset: {name}") from None
+            if self._tm.transfer_status == "transferring":
+                raise ValueError("cannot switch preset while a transfer is running")
+            with self._lock:
+                if name == self.preset_name:
+                    return {"ok": True, "preset": name,
+                            "source": self.source_id, "dest": self.dest_id}
+                self.preset_name = preset.id
+                self.topology = preset.topology
+                self.source_id = preset.source
+                self.dest_id = preset.dest
+                self.route = None
+            self._ensure_handles()  # stops old handles, builds the new ones
         return {"ok": True, "preset": preset.id, "source": self.source_id,
                 "dest": self.dest_id, "nodes": self.topology.node_ids}
 
@@ -304,6 +323,10 @@ class TopologyManager:
         (re)started. Returns the ids of nodes whose bind failed (caller
         decides how loud to be).
         """
+        with self._lifecycle:
+            return self._start_all_locked(exclude_port)
+
+    def _start_all_locked(self, exclude_port=None) -> list[str]:
         self._ensure_handles()
         loss_p, corrupt_p = self._testing_probs()
         failed = []
@@ -361,6 +384,10 @@ class TopologyManager:
         return failed
 
     def stop_all(self):
+        with self._lifecycle:
+            self._stop_all_unlocked()
+
+    def _stop_all_unlocked(self):
         for fwd in self._forwarders.values():
             if fwd.running:
                 fwd.stop()
@@ -401,7 +428,16 @@ class TopologyManager:
         one lane (unchanged behaviour), on the tri-path preset all three
         lanes are live at once. ``lanes`` describes each one for the
         client/UI: ``{"nodes", "entry_host", "entry_port"}``.
+
+        Runs under ``_lifecycle`` so a concurrent ``set_preset()`` cannot
+        swap the graph + handle map between validation and the route push
+        (KeyError / route pushed onto a discarded graph). The receiver
+        rebind still holds NO ``_lock`` — the module-docstring rule.
         """
+        with self._lifecycle:
+            return self._prepare_transfer_locked(server, source, dest)
+
+    def _prepare_transfer_locked(self, server, source=None, dest=None) -> dict:
         self._ensure_handles()
         if server is None:
             return {"ok": False,

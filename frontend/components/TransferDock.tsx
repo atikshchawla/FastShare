@@ -230,6 +230,7 @@ export function TransferDock({
               type="button"
               onClick={() => setDismissedSeq(resumeInfo.resumed_seq)}
               title="Dismiss resume offer"
+              aria-label="Dismiss resume offer"
               className="cursor-pointer px-1 text-neutral-500 transition hover:text-white"
             >
               <X size={13} />
