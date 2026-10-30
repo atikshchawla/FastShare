@@ -35,6 +35,12 @@ __all__ = [
     "SS_STOPPED", "SS_RUNNING", "SS_ERROR",
 ]
 
+# Above this many resumed packets, _on_resume records a single summary
+# instead of replaying one ACK event per packet (which would stall the
+# manager lock for ~100k iterations and flood the canvas event stream on a
+# large resume). Small resumes still replay so the packet monitor looks right.
+_RESUME_REPLAY_LIMIT = 1000
+
 
 class TransferManager:
     def __init__(self):
@@ -182,11 +188,20 @@ class TransferManager:
             self.server_status = SS_RUNNING
             self.server_error = None
             self._log(f"UDP server started on port {port}")
-            if topology_on:
-                # forwarders on every node except the receiver's; a bind
-                # failure only warns here (prepare_transfer self-heals and
-                # fails loudly with context when the route really needs it)
-                failed = self.topology.start_all(exclude_port=server.bound_port)
+
+        # Boot the topology forwarders OUTSIDE the manager lock: with
+        # isolated (per-PC) nodes this blocks for seconds joining child
+        # processes, and holding the lock would freeze the 500 ms status
+        # poll right when a demo starts. Forwarders never call back into the
+        # manager, so this ordering is deadlock-free.
+        if topology_on:
+            failed = self.topology.start_all(exclude_port=server.bound_port)
+            if self.server is not server:
+                # stop_server raced the boot: do not leave ghost forwarders
+                self.topology.stop_all()
+                return {"ok": False,
+                        "error": "receiver was stopped during topology setup"}
+            with self._lock:
                 for node_id in failed:
                     self._log(f"WARNING: topology node '{node_id}' could not "
                               f"bind its port")
@@ -194,20 +209,23 @@ class TransferManager:
                     hops = len(self.topology.topology.nodes) - 1
                     self._log(f"Topology online: {hops} forwarders + receiver "
                               f"on {self.topology.dest_id} ({port})")
-            return {"ok": True, "message": "server started"}
+        return {"ok": True, "message": "server started"}
 
     def stop_server(self):
         # Never call into the server while holding the manager lock: the
         # server thread may itself want the manager lock for its callbacks
         # (message/duplicate/complete) -> that ordering deadlocks.
-        # Forwarders never call back, so stopping them inside is safe.
         with self._lock:
             server = self.server
             self.server = None
             self.server_status = SS_STOPPED
             self.server_error = None
-            self.topology.stop_all()
-            self.topology.clear_route()
+        # Stopping the topology forwarders (and their isolated child
+        # processes) can block for seconds; do it OUTSIDE the lock so the
+        # status poll keeps responding while a demo shuts down. Forwarders
+        # never call back, so there is no deadlock risk here.
+        self.topology.stop_all()
+        self.topology.clear_route()
         if server:
             server.stop()   # partial files survive: they power resume
         with self._lock:
@@ -369,6 +387,20 @@ class TransferManager:
                 return
             self.resumed_from_seq = resumed_seq
             self.resumed_bytes = min(received_bytes, size)
+            if resumed_seq > _RESUME_REPLAY_LIMIT:
+                # Large resume: replaying one ACK event per packet would spin
+                # the manager lock for ~N iterations (stalling status polls)
+                # and flood the canvas event stream. Record a summary that
+                # lands the counters in the same place instead.
+                self.confirmed_bytes += self.resumed_bytes
+                self.packets_acked += resumed_seq
+                if resumed_seq > self.current_sequence:
+                    self.current_sequence = resumed_seq
+                self._log(
+                    f"Session resumed at packet #{resumed_seq + 1}: "
+                    f"{self.resumed_bytes}B reused from disk "
+                    f"({resumed_seq} packets, summary)")
+                return
             for s in range(1, resumed_seq + 1):
                 payload_len = min(ps, size - (s - 1) * ps)
                 self.emit_packet({

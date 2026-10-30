@@ -15,9 +15,17 @@ transmission takes. Policy per the locked multipath decisions:
    so the schedule does not flap.
 
 Pure stdlib: ``udp.client`` imports it; the controller reads ``state()``.
+
+Thread-safety: ``pick()`` / ``record()`` / ``state()`` are guarded by an
+internal lock (the transfer thread mutates while the status poll reads).
+Lock order is strictly **manager -> scheduler**: ``status_snapshot()``
+holds the manager lock while reading ``state()``, so this class must never
+call back into the manager while holding its own lock — ``on_event`` fires
+*after* the lock is released.
 """
 
 import random
+import threading
 from collections import deque
 
 
@@ -50,39 +58,48 @@ class PathScheduler:
         self._rr = 0
         self._mode = "explore"
         self._weights = [1.0 / self.lane_count] * self.lane_count
+        # guards pick/record/state across the transfer + status-poll threads
+        self._lock = threading.Lock()
 
     # ---------------------------------------------------------------- picks
     def pick(self) -> int:
         """Lane index for the next transmission."""
-        n = self.lane_count
-        if n == 1:
-            self._mode = "single"
-            return 0
-        if not self.enabled:
-            self._mode = "disabled"
-            return 0
-        self._picks += 1
-        if self._picks <= self.explore_per_lane * n:
-            self._mode = "explore"
-            idx = (self._picks - 1) % n
-        elif not any(self._flagged):
-            self._mode = "round_robin"
-            idx = self._rr
-            self._rr = (self._rr + 1) % n
-        else:
-            self._mode = "weighted"
-            idx = self._weighted_choice()
-        return idx
+        with self._lock:
+            n = self.lane_count
+            if n == 1:
+                self._mode = "single"
+                return 0
+            if not self.enabled:
+                self._mode = "disabled"
+                return 0
+            self._picks += 1
+            if self._picks <= self.explore_per_lane * n:
+                self._mode = "explore"
+                idx = (self._picks - 1) % n
+            elif not any(self._flagged):
+                self._mode = "round_robin"
+                idx = self._rr
+                self._rr = (self._rr + 1) % n
+            else:
+                self._mode = "weighted"
+                idx = self._weighted_choice()
+            return idx
 
     def record(self, lane: int, delivered: bool) -> None:
         """Report the outcome of one attempt that went out on ``lane``."""
         if not 0 <= lane < self.lane_count:
             return
-        self._history[lane].append(1 if delivered else 0)
-        self._sent[lane] += 1
-        if not delivered:
-            self._lost[lane] += 1
-        self._reevaluate()
+        with self._lock:
+            self._history[lane].append(1 if delivered else 0)
+            self._sent[lane] += 1
+            if not delivered:
+                self._lost[lane] += 1
+            events = self._reevaluate()
+        # fire callbacks AFTER releasing the lock: on_event logs through
+        # the TransferManager lock, and status_snapshot() takes the manager
+        # lock -> this lock (same order everywhere, no AB-BA).
+        for text in events:
+            self.on_event(text)
 
     # ------------------------------------------------------------- policies
     def _window_loss(self, lane: int) -> float:
@@ -91,7 +108,9 @@ class PathScheduler:
             return 0.0
         return 1.0 - (sum(history) / len(history))
 
-    def _reevaluate(self) -> None:
+    def _reevaluate(self) -> list[str]:
+        """Recompute flags/weights; returns on_event texts to fire unlocked."""
+        events: list[str] = []
         for lane in range(self.lane_count):
             history = self._history[lane]
             if len(history) < self.min_samples:
@@ -99,15 +118,16 @@ class PathScheduler:
             loss = self._window_loss(lane)
             if not self._flagged[lane] and loss >= self.flag_loss:
                 self._flagged[lane] = True
-                self.on_event(
+                events.append(
                     f"PATH {_lane_name(lane)} flagged at {loss:.0%} loss "
                     f"-> shifting traffic to healthier lanes")
             elif self._flagged[lane] and loss < self.recover_loss:
                 self._flagged[lane] = False
-                self.on_event(
+                events.append(
                     f"PATH {_lane_name(lane)} recovered ({loss:.0%} loss) "
                     f"-> back in rotation")
         self._weights = self._compute_weights()
+        return events
 
     def _compute_weights(self) -> list[float]:
         n = self.lane_count
@@ -136,35 +156,36 @@ class PathScheduler:
     # ---------------------------------------------------------------- state
     def state(self) -> dict:
         """Snapshot for ``/api/status`` + the UI path panel."""
-        lanes = []
-        for i in range(self.lane_count):
-            history = self._history[i]
-            window_loss = self._window_loss(i) if history else 0.0
-            lanes.append({
-                "lane": i,
-                "name": _lane_name(i),
-                "sent": self._sent[i],
-                "lost": self._lost[i],
-                "attempts": len(history),
-                "window_loss": round(window_loss, 3),
-                "flagged": self._flagged[i],
-                "weight": round(self._weights[i], 3),
-            })
-        if self.lane_count == 1:
-            mode = "single"
-        elif not self.enabled:
-            mode = "disabled"
-        else:
-            mode = self._mode
-        return {
-            "mode": mode,
-            "enabled": self.enabled and self.lane_count > 1,
-            "window": self.window,
-            "flag_loss": self.flag_loss,
-            "recover_loss": self.recover_loss,
-            "probe_share": self.probe_share,
-            "lanes": lanes,
-        }
+        with self._lock:
+            lanes = []
+            for i in range(self.lane_count):
+                history = self._history[i]
+                window_loss = self._window_loss(i) if history else 0.0
+                lanes.append({
+                    "lane": i,
+                    "name": _lane_name(i),
+                    "sent": self._sent[i],
+                    "lost": self._lost[i],
+                    "attempts": len(history),
+                    "window_loss": round(window_loss, 3),
+                    "flagged": self._flagged[i],
+                    "weight": round(self._weights[i], 3),
+                })
+            if self.lane_count == 1:
+                mode = "single"
+            elif not self.enabled:
+                mode = "disabled"
+            else:
+                mode = self._mode
+            return {
+                "mode": mode,
+                "enabled": self.enabled and self.lane_count > 1,
+                "window": self.window,
+                "flag_loss": self.flag_loss,
+                "recover_loss": self.recover_loss,
+                "probe_share": self.probe_share,
+                "lanes": lanes,
+            }
 
 
 __all__ = ["PathScheduler"]

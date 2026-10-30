@@ -64,12 +64,24 @@ def resume_point(received, size, packet_size, total_packets):
 
 
 def discard_partial(candidate):
-    """Delete a partial file + its sidecar meta (used by 'start over')."""
-    for path in (candidate["part_path"], candidate["meta_path"]):
-        try:
-            os.remove(path)
-        except OSError:
-            pass
+    """Delete a partial file + its sidecar meta (used by 'start over').
+
+    Returns True when the partial is gone (removed now, or already absent)
+    and False when the remove failed — e.g. the file is locked on Windows —
+    so callers can stop retrying instead of spinning forever.
+    """
+    ok = True
+    try:
+        os.remove(candidate["part_path"])
+    except FileNotFoundError:
+        pass
+    except OSError:
+        ok = False
+    try:
+        os.remove(candidate["meta_path"])
+    except OSError:
+        pass
+    return ok
 
 
 def write_meta(part_path, meta):

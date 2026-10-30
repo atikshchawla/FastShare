@@ -31,6 +31,10 @@ DEFAULT_DEST = "dst"
 
 _ZERO = {"data_packets": 0, "ack_packets": 0, "dropped": 0}
 _MAX_NODE_LOG = 1000      # per-node ring (per-packet lines on small files)
+# Safety-net ceiling for joining a booting child (its start() is already
+# bounded by _READY_TIMEOUT in process_node.py); stops a wedged child from
+# hanging start_all() forever.
+_BOOT_JOIN_TIMEOUT = 8.0
 
 
 class TopologyManager:
@@ -340,8 +344,12 @@ class TopologyManager:
                        for item in pending]
             for thread in threads:
                 thread.start()
-            for thread in threads:
-                thread.join()
+            for thread, (node_id, _) in zip(threads, pending):
+                # bounded join: a wedged child must not hang start_all()
+                # (and with it the API call) forever
+                thread.join(timeout=_BOOT_JOIN_TIMEOUT)
+                if thread.is_alive():
+                    errors.setdefault(node_id, "node start timed out")
             failed.extend(node_id for node_id, _ in pending
                           if node_id in errors)
         else:
@@ -500,11 +508,17 @@ class TopologyManager:
         """
         self._ensure_handles()
         # pull exact counters from the isolated children (they push them
-        # every 250 ms too — this just closes the last race window)
-        for fwd in self._forwarders.values():
-            refresh = getattr(fwd, "refresh_stats", None)
-            if refresh is not None:
-                refresh(timeout=0.25)
+        # every 250 ms too — this just closes the last race window).
+        # Refresh in PARALLEL: a sequential request/reply over each child's
+        # pipe cost up to 250 ms x 7 nodes per topology poll.
+        pulls = [threading.Thread(target=fn, kwargs={"timeout": 0.25},
+                                  daemon=True)
+                 for fwd in self._forwarders.values()
+                 if (fn := getattr(fwd, "refresh_stats", None)) is not None]
+        for pull in pulls:
+            pull.start()
+        for pull in pulls:
+            pull.join(timeout=0.4)
         with self._lock:
             route = list(self.route) if self.route else None
             source, dest = self.source_id, self.dest_id

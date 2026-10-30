@@ -1,6 +1,7 @@
 """Retransmission tests: packet-loss simulation and the retry limit."""
 
 import hashlib
+import random
 
 from conftest import received_bytes, run_transfer
 
@@ -12,6 +13,11 @@ def _sha256(b: bytes) -> str:
 def test_loss_causes_timeout_and_retransmission(random_file):
     """10% sender->receiver loss must trigger TIMEOUT + RETRANSMITTED events
     and the transfer must still succeed byte-for-byte."""
+    # Seeded: with unseeded randomness the "TIMEOUT in statuses" assertion
+    # is structurally flaky (~1.5% of runs lose nothing across all 40
+    # packets, 0.9^40). A fixed seed keeps the fault injection real but
+    # makes the outcome reproducible.
+    random.seed(0xC0FFEE)
     src = random_file(40 * 1024)  # 40 packets gives plenty of loss chances
     probe = run_transfer(src, packet_size=1024, timeout=0.1,
                          max_retries=8, loss=0.10)

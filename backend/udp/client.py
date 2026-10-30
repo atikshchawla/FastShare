@@ -99,6 +99,14 @@ class UDPClient:
             )
         else:
             self.scheduler = None
+        # ACK-origin allowlist (P1-9): multipath uses ONE unconnected socket,
+        # so any host can technically datagram it. ACKs mirror back from the
+        # lane's entry forwarder (it re-sends from its own bound socket), so
+        # only those source ports may complete a Stop-and-Wait wait — anything
+        # else is forged/stale. Empty set = no check: the connected
+        # single-path socket is already kernel-filtered to its peer.
+        self._ack_ports = ({int(lane["entry_port"]) for lane in self.lanes}
+                           if self.multipath_enabled else set())
 
         self.sock = None
         self._stop = threading.Event()
@@ -319,11 +327,18 @@ class UDPClient:
         """
         while not self._stop.is_set():
             try:
-                data = self.sock.recv(65536)
+                data, src = self.sock.recvfrom(65536)
             except socket.timeout:
                 return None
             except OSError:
                 return None
+            if self._ack_ports and src[1] not in self._ack_ports:
+                # P1-9: not from any lane's entry node -> forged/stale
+                # datagram; ignoring it keeps it from ACKing our sequence.
+                self.message(
+                    f"ACK #{expected_seq} from unexpected source "
+                    f"{src[0]}:{src[1]} -- dropped")
+                continue
             # simulated bit flip on the returning ACK
             if self.ack_corrupt_probability > 0 and \
                     random.random() < self.ack_corrupt_probability:

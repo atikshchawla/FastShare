@@ -130,7 +130,14 @@ class UDPServer:
                 continue
             except ValueError:
                 continue
-            self._handle(seq, ptype, payload, addr)
+            try:
+                self._handle(seq, ptype, payload, addr)
+            except OSError as exc:
+                # A disk error (full/locked/permission) on this one packet
+                # must NOT kill the listener and leave a zombie "running"
+                # receiver. Log it and keep serving: the sender's timeout +
+                # retry (and the END completeness guard) handle the rest.
+                self.message(f"receiver error on packet #{seq}: {exc}")
         self.reset_session()
         self.message("Server stopped")
 
@@ -177,6 +184,15 @@ class UDPServer:
                     # Session already closed -- just re-ACK to unblock the sender.
                     self._send_ack(seq, addr)
                     return
+                if session["expected_seq"] <= session["total_packets"]:
+                    # Incomplete: a real sender only sends END after every
+                    # DATA was ACKed, so this is a forged/stale END. Ignoring
+                    # it stops a truncated file being finalized as success.
+                    self.message(
+                        f"END for incomplete transfer "
+                        f"(#{session['expected_seq'] - 1}/"
+                        f"{session['total_packets']}) -- ignored")
+                    return
                 self.message(f"SERVER <- END packet received, sending final ACK #{seq}")
                 self._finalize(session)
                 self._send_ack(seq, addr)
@@ -217,7 +233,13 @@ class UDPServer:
                 # otherwise poison a later resume).
                 candidate = find_partial(self.receive_dir, name, size, None)
                 while candidate:
-                    discard_partial(candidate)
+                    if not discard_partial(candidate):
+                        # locked (e.g. Windows) -> find_partial returns the
+                        # same candidate forever; stop instead of spinning
+                        self.message(f"WARNING: could not remove stale "
+                                     f"partial {candidate['part_path']} "
+                                     f"(in use?) -- keeping it")
+                        break
                     candidate = find_partial(self.receive_dir, name, size, None)
             resumed_seq, aligned = 0, 0
             if candidate:

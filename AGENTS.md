@@ -150,6 +150,55 @@ Strict format for each entry (all three fields):
 
 ### Entries
 
+### 2026-10-30 — Atiksh Chawla — opencode mimo-v2.6-flash-free (Package A backend reliability)
+
+- **Done**: Implemented Package A from `CODE_AUDIT.md` (P0-1..6 + P1-9/10),
+  backend-only. **P0-1** `udp/server.py` `_serve` wraps `_handle` in
+  `try/except OSError` (disk error logs + keeps serving instead of killing
+  the listener into a zombie "running" receiver); `resume_fs.discard_partial`
+  now returns False when a remove fails (Windows-locked) and the stale-
+  partial discard loop breaks instead of spinning. **P0-2** END handling
+  ignores END while `expected_seq <= total_packets` (a forged/stale END can
+  no longer finalize a truncated file — the *peer-address pinning half was
+  deliberately DEFERRED*: multipath last-hop source addresses vary per lane,
+  pinning would risk breaking the demo). **P0-3** `transfer/manager.py`
+  `start_all` topology boot and `stop_all`+`clear_route` moved OUTSIDE the
+  manager lock (status poll no longer freezes for seconds exactly when a
+  demo starts; ghost-forwarder guard if `stop_server` races the boot);
+  `topology/manager.py` parallel child boot joins are bounded by the new
+  `_BOOT_JOIN_TIMEOUT=8.0` (wedged child reported as failed, not hung
+  forever). **P0-4** `snapshot()` refreshes per-child stats in parallel
+  (thread per handle, 0.4 s join) instead of sequential request/reply.
+  **P0-5** `tests/test_retransmission.py::test_loss_causes_timeout_and_retransmission`
+  seeds `random` (kills the structural ~1.5% 0.9^40 flake; 5/5 isolated
+  reruns deterministic). **P0-6** `main.py` FastAPI `lifespan` hook calls
+  `manager.stop_server()` on shutdown (no orphaned forwarders/children on
+  Ctrl-C); removed the stray `cd f` docstring line. **P1-9** `udp/scheduler.py`
+  `PathScheduler` guarded by an internal `threading.Lock` on
+  `pick/record/state` with `on_event` fired AFTER release (lock order is
+  strictly manager → scheduler, no AB-BA with `status_snapshot`);
+  `udp/client.py` ACK-origin validation — `_ack_ports` allowlist built from
+  lane `entry_port`s in `__init__`, `_wait_ack` switched to `recvfrom` and
+  drops ACKs from non-lane source ports (single-path keeps an empty set →
+  kernel-filtered, behaviour unchanged). **P1-10** `_RESUME_REPLAY_LIMIT=1000`
+  in `transfer/manager.py`: larger resumes record a counter summary instead
+  of replaying one ACK event per packet. Verified by a new probe
+  (`probe_package_a.py`: forged END ignored + partial survives + real END
+  finalizes exact bytes; injected OSError keeps listener alive + transfer
+  completes; wrong-origin ACK ignored / lane-origin accepted / wrong-only
+  times out → ALL CHECKS PASS) and re-ran the dot-fidelity probe (ALL CHECKS
+  PASS, no regression). Gates: pytest **119 passed** (x2), `smoke_topology.ps1`
+  **SMOKE PASS** (x2), strict tsc / `npm run lint` (2 pre-existing warnings)
+  / `npm run build` clean.
+- **Pending**: Uncommitted working tree (user decides commits — suggested
+  split: Package A backend vs the earlier event-stream work); manual browser
+  check never run (no browser automation here); stale `stash@{0}` still
+  parked; `_send_control` re-marks `SENT` on every retransmit attempt
+  (control-packet double-count, left as-is — noted in the dot-fidelity
+  entry).
+- **Planned**: Await user direction — remaining audit packages (B frontend
+  perf / C tests+a11y / D demo polish), or cherry-pick from `CODE_AUDIT.md`.
+
 ### 2026-10-09 — Atiksh Chawla — opencode mimo-v2.6-flash-free (dot-fidelity event stream)
 
 - **Done**: Made the animated packet dots correlate 1:1 with real packet
