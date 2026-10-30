@@ -74,8 +74,10 @@ function post(path: string, body?: unknown): Promise<ApiOk> {
 
 export const api = {
   status: () => json<Snapshot>("/api/status"),
-  transferPackets: (limit = 120) =>
-    json<PacketResponse>(`/api/transfer/packets?limit=${limit}`),
+  transferPackets: (limit = 120, since = -1) =>
+    json<PacketResponse>(
+      `/api/transfer/packets?limit=${limit}&since=${since}`,
+    ),
   topology: () => json<TopologySnapshot>("/api/topology"),
   nodeLogs: (id: string, limit = 200) =>
     json<NodeLogsResponse>(

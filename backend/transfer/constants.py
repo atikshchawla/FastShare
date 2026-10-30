@@ -14,3 +14,4 @@ SS_ERROR = "error"
 
 MAX_FEED = 3000         # max event feed lines kept
 MAX_LOG_ENTRIES = 4000  # cap packet log size (UI asks for a window anyway)
+MAX_EVENT_STREAM = 2000  # append-only transition ring for the animated canvas

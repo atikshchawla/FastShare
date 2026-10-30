@@ -225,16 +225,19 @@ class UDPClient:
         """
         label = protocol.type_name(ptype)
         packet = build_packet(seq, ptype, payload)
+        prev_lane = None  # lane the LAST (failed) attempt used, for TIMEOUT
         for attempt in range(self.max_retries + 1):
             lane = self._pick_lane()
             if attempt > 0:
+                # TIMEOUT belongs to the lane that just failed (prev_lane).
                 self._mark(seq, label, len(packet), STATUS_TIMEOUT, attempt,
-                           lane=lane)
+                           lane=prev_lane)
                 self._mark(seq, label, len(packet), STATUS_RETRANSMITTED,
                            attempt, lane=lane)
                 self.message(f"CLIENT -> {label} #{seq} RETRANSMIT (attempt {attempt + 1})")
             else:
                 self.message(f"CLIENT -> {label} #{seq} sent")
+            prev_lane = lane
             self._mark(seq, label, len(packet), STATUS_SENT, attempt,
                        lane=lane)
             try:
@@ -259,11 +262,14 @@ class UDPClient:
     def _send_data_packet(self, seq, chunk):
         """Send one DATA packet and wait for ACK <seq>."""
         packet = build_packet(seq, protocol.PACKET_TYPE_DATA, chunk)
+        prev_lane = None  # lane the LAST (failed) attempt used, for TIMEOUT
         for attempt in range(self.max_retries + 1):
             lane = self._pick_lane()
             if attempt > 0:
+                # TIMEOUT belongs to the lane that just failed (prev_lane),
+                # not the lane picked for this retransmit.
                 self._mark(seq, "DATA", len(packet), STATUS_TIMEOUT, attempt,
-                           lane=lane)
+                           lane=prev_lane)
                 self._mark(seq, "DATA", len(packet), STATUS_RETRANSMITTED,
                            attempt, lane=lane)
                 self.message(f"CLIENT -> DATA #{seq}/{self.total_packets} RETRANSMIT (attempt {attempt + 1})")
@@ -272,6 +278,7 @@ class UDPClient:
                            lane=lane)
                 if self.verbose or seq == 1 or seq == self.total_packets or seq % 50 == 0:
                     self.message(f"CLIENT -> DATA #{seq}/{self.total_packets} sent ({len(chunk)}B)")
+            prev_lane = lane
             try:
                 sent_at = time.monotonic()
                 self._transmit(packet, lane)

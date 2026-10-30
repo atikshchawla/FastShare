@@ -106,9 +106,34 @@ export interface FeedLine {
   text: string;
 }
 
+/**
+ * One packet status transition from the backend's append-only stream (every
+ * SENT/WAITING/TIMEOUT/RETRANSMITTED/ACKED/FAILED, not just the latest per
+ * seq). `id` is a monotonic cursor used both to order events and to dedupe —
+ * the canvas draws each `id` exactly once.
+ */
+export interface PacketEvent {
+  id: number;
+  t: number;
+  seq: number;
+  type: PacketType;
+  status: PacketStatus;
+  retries: number;
+  /** Multipath lane index (null/absent when single-path). */
+  lane?: number | null;
+  rtt_ms?: number | null;
+  size: number;
+}
+
 export interface PacketResponse {
   packets: PacketEntry[];
   feed: FeedLine[];
+  /** Append-only transition stream: events with `id > since` (the cursor). */
+  events: PacketEvent[];
+  /** High-water event id — pass back as `since` on the next poll. */
+  cursor: number;
+  /** True when the requested cursor fell behind the retained ring. */
+  gap?: boolean;
 }
 
 export interface SelectedFile {

@@ -121,6 +121,7 @@ Docs: new `FEATURE_SPEC_MULTIPATH.md`, README, PROJECT_PLAN Phases 13–14.
 | `FEATURE_SPEC_MULTI_SERVER_TOPOLOGY.md` | Topology spec, locked decisions, API contract, phase log |
 | `FEATURE_SPEC_MULTIPATH.md` | Multi-path spec: isolation, tri preset, scheduler, API, UI, phase log |
 | `IMPLEMENTATION_ROADMAP.md` | Design notes for CRC/stats/resume (historical — implemented) |
+| `CODE_AUDIT.md` | 2026-10-09 code audit: backend/frontend findings with file:line refs + prioritized P0–P2 action list |
 | `Reliable UDP File Transfer - Implementation Plan.md` | Original academic plan |
 | `.plan/plan.md` | Approved 8-step UI-revamp plan (completed) |
 
@@ -148,6 +149,59 @@ Strict format for each entry (all three fields):
 ```
 
 ### Entries
+
+### 2026-10-09 — Atiksh Chawla — opencode mimo-v2.6-flash-free (dot-fidelity event stream)
+
+- **Done**: Made the animated packet dots correlate 1:1 with real packet
+  processing (previously a 500 ms poll sampled a latest-status-only table →
+  0/24 timeout flashes, 0/24 retransmit respawns, 35/150 data dots, 36% of
+  transitions observable). **Backend** — `transfer/constants.py`
+  `MAX_EVENT_STREAM=2000`; `transfer/event_log.py` new append-only `stream`
+  ring (`record()` now also appends every START/DATA/END transition with a
+  monotonic `id`; `next_id` deliberately NOT reset in `reset()` so a stale
+  frontend cursor can never alias onto a new transfer) +
+  `packet_events(since,limit)`/`current_cursor()` returning
+  `(events, cursor, gap)`; `transfer/manager.py` locked `packet_events()`
+  accessor; `GET /api/transfer/packets` gains a `since` cursor →
+  `{packets, feed, events, cursor, gap}`; `udp/client.py` fixed the
+  TIMEOUT-lane mislabel in `_send_data_packet`/`_send_control` (TIMEOUT now
+  carries the *failed* attempt's lane via `prev_lane`, not the retransmit's
+  newly-picked lane — only became visible once TIMEOUT renders). **Frontend**
+  — `lib/types.ts` `PacketEvent` + extended `PacketResponse`;
+  `lib/api.ts` `transferPackets(limit, since)`; `useStatusPolling` keeps a
+  `cursorRef` and stores the event delta; `useTransfer`/`page.tsx` thread
+  `events`; `PacketLayer` ingest rewritten to consume the id-ordered stream
+  (`lastIdRef` single-draw dedupe; spawn on SENT/WAITING, ack on ACKED,
+  flash on TIMEOUT, respawn on RETRANSMITTED) — dropped the table sampling,
+  the `seq:status:retries` key, and the now-unused `packets` prop. Verified
+  by probe (tri, 35% loss): timeout/retransmit flashes **N/N**, data-dot
+  coverage **150/150**, ack **152/152**, **0** duplicate draws, **100%**
+  event delivery (was 36%). Gates: pytest **119**, `smoke_topology.ps1`
+  **SMOKE PASS**, strict tsc / `npm run lint` / `npm run build` clean.
+- **Pending**: Uncommitted working tree (user decides commits); the other
+  CODE_AUDIT P0–P2 fixes not yet started; manual browser check of the new
+  dot behaviour never run (no browser automation here); stale `stash@{0}`
+  still parked. Minor known quirk left as-is: `_send_control` re-marks
+  `SENT` on every retransmit attempt (control-packet double-count; the
+  canvas correctly doesn't double-spawn, but the `packets_sent` stat
+  over-counts START/END retries).
+- **Planned**: List the remaining possible fixes (from `CODE_AUDIT.md`)
+  for the user to choose from, then implement the chosen package and
+  re-run the full gate set.
+
+### 2026-10-09 — Atiksh Chawla — opencode mimo-v2.6-flash-free (repo audit)
+
+- **Done**: Full read-only scan of the repo — backend (22 prod modules
+  ~3,040 LOC + 15 test files / 119 tests), frontend (44 files ~5,960 LOC)
+  and all planning docs; produced `CODE_AUDIT.md` (consolidated findings
+  with file:line refs, P0–P2 prioritized action list, 4 shippable work
+  packages) and indexed it in the Documentation index. No source changed,
+  no git commands run.
+- **Pending**: Awaiting user decision on which work package to implement
+  (A backend reliability / B frontend perf / C tests+a11y / D demo
+  polish) — next action starts on their pick.
+- **Planned**: Once a package is chosen, implement it and run the full
+  gate set (pytest 119, smoke, lint/build/strict-tsc).
 
 ### 2026-10-09 — Atiksh Chawla — opencode mimo-v2.6-flash-free (tri-first + state colours)
 

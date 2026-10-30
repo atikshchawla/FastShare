@@ -11,8 +11,16 @@ import { useTransferActions } from "./useTransferActions";
  * (server control, transfer control, testing config).
  */
 export function useTransfer() {
-  const { status, packets, feed, topology, error, setError, refreshStatus } =
-    useStatusPolling();
+  const {
+    status,
+    packets,
+    events,
+    feed,
+    topology,
+    error,
+    setError,
+    refreshStatus,
+  } = useStatusPolling();
   const { selectedFile, rawFile, selectFile } = useFileSelection();
   const { resumeInfo } = useResume({
     transferStatus: status?.transfer_status ?? null,
@@ -23,6 +31,7 @@ export function useTransfer() {
   return {
     status,
     packets,
+    events,
     feed,
     topology,
     error,

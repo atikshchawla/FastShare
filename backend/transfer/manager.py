@@ -516,6 +516,14 @@ class TransferManager:
         with self._lock:
             return self.events.packet_log(limit)
 
+    def packet_events(self, since=-1, limit=500):
+        """Append-only packet transition stream for the animated canvas.
+
+        Returns ``(events, cursor, gap)``; see ``EventLog.packet_events``.
+        """
+        with self._lock:
+            return self.events.packet_events(since, limit)
+
     def recent_feed(self, limit=500):
         with self._lock:
             return self.events.recent_feed(limit)

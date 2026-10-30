@@ -272,7 +272,7 @@ export default function Home() {
             <PacketLayer
               topology={topology}
               status={s}
-              packets={t.packets}
+              events={t.events}
               speed={animSpeed}
             />
           </TopologyCanvas>

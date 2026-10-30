@@ -50,7 +50,18 @@ def transfer_status():
 
 
 @router.get("/transfer/packets")
-def transfer_packets(limit: int = 150):
+def transfer_packets(limit: int = 150, since: int = -1):
+    """Packet monitor table + feed, plus (optionally) the animated canvas's
+    transition stream.
+
+    ``since`` is the event cursor: pass the ``cursor`` from the previous
+    response to receive only NEW transitions (``events``), ordered by a
+    monotonic ``id``. Omitting it (``-1``) returns the retained backlog so a
+    freshly-loaded page catches up in one shot. The ``packets`` table (latest
+    status per seq) is always returned for the monitor view.
+    """
     limit = max(1, min(limit, 500))
+    events, cursor, gap = manager.packet_events(since, 500)
     return {"packets": manager.packet_log(limit),
-            "feed": manager.recent_feed(500)}
+            "feed": manager.recent_feed(500),
+            "events": events, "cursor": cursor, "gap": gap}

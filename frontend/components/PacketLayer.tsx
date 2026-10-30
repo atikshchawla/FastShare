@@ -11,11 +11,13 @@ import {
   type CanvasGraph,
 } from "@/lib/canvas";
 import type { TopologySnapshot } from "@/lib/topology";
-import type { PacketEntry, Snapshot } from "@/lib/types";
+import type { PacketEvent, Snapshot } from "@/lib/types";
 
 /**
- * Event-driven packet animation (plan §2). Sprites are derived from the
- * 500 ms poll — no backend event stream:
+ * Event-driven packet animation (plan §2). Sprites are driven 1:1 by the
+ * backend's append-only transition stream (`events`, each with a monotonic
+ * `id` the layer draws exactly once) — no more sampling a latest-status
+ * table, so fast transitions (TIMEOUT -> RETRANSMITTED) actually render:
  *
  *  - SENT/WAITING  → spawn a DATA dot at the source; it travels the lane
  *                    polyline the scheduler picked (segment times
@@ -33,7 +35,8 @@ import type { PacketEntry, Snapshot } from "@/lib/types";
  * whole animation in slow-mo (transport is unaffected; at most 5 DATA dots
  * stay alive so a ¼× crawl remains legible).
  *
- * Dedupe key `seq:status:retries` makes a coarse poll double-spawn-proof.
+ * Dedupe by event `id` (`lastIdRef`) keeps every transition single-draw even
+ * if React re-runs the ingest effect for a non-events reason.
  */
 
 type Point = { x: number; y: number };
@@ -121,12 +124,13 @@ function buildTimings(
 export function PacketLayer({
   topology,
   status,
-  packets,
+  events,
   speed,
 }: {
   topology: TopologySnapshot | null;
   status: Snapshot | null;
-  packets: PacketEntry[];
+  /** Append-only packet transitions since the last poll (id-ordered). */
+  events: PacketEvent[];
   /** Animation speed: 1 = real time, <1 = slow-mo (visual only — the
    *  transport keeps running at full speed; sprites just crawl). */
   speed?: number;
@@ -134,9 +138,10 @@ export function PacketLayer({
   const [, tick] = useReducer((n: number) => n + 1, 0);
   const spritesRef = useRef<Sprite[]>([]);
   const blastsRef = useRef<Blast[]>([]);
-  const seenRef = useRef<Set<string>>(new Set());
-  const latestRef = useRef({ topology, status, packets, speed });
-  latestRef.current = { topology, status, packets, speed };
+  /** Highest event id already drawn — every transition renders exactly once. */
+  const lastIdRef = useRef(0);
+  const latestRef = useRef({ topology, status, events, speed });
+  latestRef.current = { topology, status, events, speed };
 
   /** 1/slowdown factor: 1 at real time, 4 at ¼× … */
   const slowK = () => 1 / (latestRef.current.speed || 1);
@@ -168,12 +173,12 @@ export function PacketLayer({
 
   // ------------------------------------------------------------- ingest
   useEffect(() => {
-    const { status, packets, topology } = latestRef.current;
+    const { status, events, topology } = latestRef.current;
     const transferring = status?.transfer_status === "transferring";
     if (!transferring) {
-      if (spritesRef.current.length || seenRef.current.size) {
+      if (spritesRef.current.length || lastIdRef.current) {
         spritesRef.current = [];
-        seenRef.current = new Set();
+        lastIdRef.current = 0;
       }
       return;
     }
@@ -182,15 +187,18 @@ export function PacketLayer({
     const states = laneStates(status?.scheduler ?? null, graph);
     const now = performance.now();
     const sprites = spritesRef.current;
-    const seen = seenRef.current;
 
     const activeData = (seq: number) =>
       sprites.find(
         (s) => s.dir === "data" && s.seq === seq && s.phase !== "timeout",
       );
 
-    const spawnData = (p: PacketEntry) => {
-      const lane = p.lane ?? 0;
+    const spawnData = (spec: {
+      seq: number;
+      retries: number;
+      lane?: number | null;
+    }) => {
+      const lane = spec.lane ?? 0;
       const ids = laneIds(graph, lane);
       const path = lanePath(graph, lane);
       if (!ids || !path) return;
@@ -203,8 +211,8 @@ export function PacketLayer({
         return;
       const state = states[lane] ?? "candidate";
       sprites.push({
-        seq: p.seq,
-        retries: p.retries,
+        seq: spec.seq,
+        retries: spec.retries,
         dir: "data",
         phase: "travel",
         startedAt: now,
@@ -223,26 +231,28 @@ export function PacketLayer({
       });
     };
 
-    for (const p of packets) {
-      const key = `${p.seq}:${p.status}:${p.retries}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
+    // Events arrive id-ordered and gap-free (cursor drain); draw each once.
+    for (const e of events) {
+      if (e.id <= lastIdRef.current) continue;
+      lastIdRef.current = e.id;
+      const seq = e.seq;
 
-      switch (p.status) {
+      switch (e.status) {
         case "SENT":
         case "WAITING": {
-          if (!activeData(p.seq)) spawnData(p);
+          if (!activeData(seq))
+            spawnData({ seq, retries: e.retries, lane: e.lane });
           break;
         }
         case "ACKED": {
-          const data = activeData(p.seq);
+          const data = activeData(seq);
           if (data) data.ackSeen = true;
-          else spawnAck(p.seq, p.retries, now, p.lane ?? 0);
+          else spawnAck(seq, e.retries, now, e.lane ?? 0);
           break;
         }
         case "TIMEOUT":
         case "FAILED": {
-          const data = activeData(p.seq);
+          const data = activeData(seq);
           if (data) {
             const elapsed = now - data.startedAt;
             data.pos =
@@ -256,15 +266,15 @@ export function PacketLayer({
         }
         case "RETRANSMITTED": {
           const idx = sprites.findIndex(
-            (s) => s.dir === "data" && s.seq === p.seq,
+            (s) => s.dir === "data" && s.seq === seq,
           );
           if (idx >= 0) sprites.splice(idx, 1);
-          spawnData(p);
+          spawnData({ seq, retries: e.retries, lane: e.lane });
           break;
         }
       }
     }
-  }, [packets, status?.transfer_status]);
+  }, [events, status?.transfer_status]);
 
   // ------------------------------------------------- frame loop + prune
   useEffect(() => {
